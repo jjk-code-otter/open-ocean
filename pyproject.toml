@@ -1,0 +1,19 @@
+[project]
+name = "open_ocean"
+version = "0.0.1"
+authors = [
+  { name="John Kennedy", email="jjk.code.otter.gmail.com" },
+]
+description = "Marine data processing"
+readme = "README.md"
+requires-python = ">=3.11"
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "Operating System :: OS Independent",
+]
+license = "GNU GPLv3"
+license-files = ["LICENSE"]
+
+[project.urls]
+Homepage = "https://github.com/jjk-code-otter/open-ocean"
+Issues = "https://github.com/jjk-code-otter/open-ocean/issues"

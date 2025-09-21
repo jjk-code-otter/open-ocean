@@ -30,6 +30,10 @@ def get_iquam_year_month(year, month):
     data_dir = Path(os.getenv("DATADIR"))
     out_path = data_dir / 'IQUAM' / f'{year}{month:02d}-STAR-L2i_GHRSST-SST-iQuam-V2.10-v01.0-fv01.0.nc'
 
+    if out_path.exists():
+        print(f"File {out_path} already exists, skipping.")
+        return
+
     try:
         r = requests.get(url, stream=True, headers={'User-agent': 'Mozilla/5.0'})
 
@@ -74,5 +78,6 @@ def get_cds_year_month(year, month):
     client.retrieve(dataset, request).download()
 
 if __name__ == '__main__':
-    for year, month in product(range(1981, 1990), range(1, 13)):
+    for year, month in product(range(1981, 2000), range(1, 13)):
+        print(year, month)
         get_iquam_year_month(year, month)

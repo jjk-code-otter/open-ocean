@@ -187,11 +187,13 @@ class Grid:
     def get_x_index(self, lon):
         """Calculate the x index from the input longitudes for the input climatology."""
         index = (lon + 180).astype(int)
+        index[index > 359] = 0
         return index
 
     def get_y_index(self, lat):
         """Calculate the y index from the input latitudes for the input climatology."""
         index = (lat + 90).astype(int)
+        index[index > 179] = 179
         return index
 
     def get_t_index(self, date):
@@ -215,6 +217,15 @@ class Grid:
         )
         day_number = cumulative_month_lengths[month - 1] + day - 1
         return day_number.astype(int)
+
+    def calculate_area_average(self, lat_range, lon_range):
+        """Calculate aree average from the input latitude and longitude ranges"""
+        ds = Grid.make_xarray(self.data5, res=5)
+        lat_slice = ds.sel(latitude=slice(lat_range[0], lat_range[1]))
+        lat_lon_slice = lat_slice.sel(longitude=slice(lon_range[0], lon_range[1]))
+        weights = np.cos(np.deg2rad(lat_lon_slice.latitude))
+        weighted_mean = lat_lon_slice.weighted(weights).mean(("longitude", "latitude"))
+        return weighted_mean.sst.values[0]
 
     @staticmethod
     def make_xarray(data_array, res=5):
@@ -241,11 +252,14 @@ class Grid:
         )
         return ds
 
-    def plot_covariance(self):
+    def plot_covariance(self, filename=None):
         # Let's plot the covariance matrix (zoom in, it's pretty).
         plt.pcolormesh(self.covariance)
         plt.title("Covariance")
-        plt.show()
+        if filename is None:
+            plt.show()
+        else:
+            plt.savefig(filename)
 
     def plot_covariance_row(self, lat, lon):
         """Plot a row from the covariance matrix based on specified latitude and longitude."""
@@ -262,8 +276,9 @@ class Grid:
         Grid.plot_generic_map(ds, np.arange(0, 0.2, 0.01))
 
     @staticmethod
-    def plot_generic_map(ds, levels):
+    def plot_generic_map(ds, levels, filename=None):
         plt.figure()
+        plt.gcf().set_size_inches(16, 9)
         proj = ccrs.PlateCarree()
         p = ds.sst.plot(
             transform=proj,
@@ -273,21 +288,24 @@ class Grid:
         )
         p.axes.coastlines()
         plt.title("")
-        plt.show()
+        if filename is None:
+            plt.show()
+        else:
+            plt.savefig(filename, )
         plt.close('all')
 
-    def plot_map(self):
+    def plot_map(self, filename=None):
         """Plot the grid as a map"""
         ds = Grid.make_xarray(self.data, res=1)
         ds = ds.mean(dim='time')
-        Grid.plot_generic_map(ds, np.arange(-3, 3, 0.2))
+        Grid.plot_generic_map(ds, np.arange(-3, 3, 0.2), filename=filename)
 
-    def plot_map5(self):
+    def plot_map5(self, filename=None):
         """Plot the 5x5 grid as a map"""
         ds = Grid.make_xarray(self.data5, res=5)
-        Grid.plot_generic_map(ds, np.arange(-3, 3, 0.2))
+        Grid.plot_generic_map(ds, np.arange(-3, 3, 0.2), filename=filename)
 
-    def plot_map_unc5(self):
+    def plot_map_unc5(self, filename=None):
         """Plot a map of the uncertainties at 5x5 resolution"""
         ds = Grid.make_xarray(self.unc, res=5)
-        Grid.plot_generic_map(ds, np.arange(0, 1.5, 0.1))
+        Grid.plot_generic_map(ds, np.arange(0, 1.5, 0.1), filename=filename)

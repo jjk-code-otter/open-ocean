@@ -174,9 +174,9 @@ class Grid:
         self.unc[:, :, :] = np.sqrt((self.covariance[np.diag_indices(2592)]).reshape((1, 36, 72)))
         self.unc[self.unc == 0] = np.nan
 
-        #47N 7W
-        #13N 48E
-        #-33 -142
+        #47N 7W?
+        #13N 48E?
+        #-33N -142E!
         x = int(self.get_x_index(np.array([-142]), n)/5)
         y = int(self.get_y_index(np.array([-33]), n)/5)
         xy = x + y * 72

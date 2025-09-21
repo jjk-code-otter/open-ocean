@@ -25,8 +25,8 @@ from datetime import datetime
 if __name__ == "__main__":
     data_dir = Path(os.getenv("DATADIR"))
 
-    year = 1983
-    month = 1
+    year = 1989
+    month = 12
 
     iquam = xr.open_dataset(data_dir / 'IQUAM' / f'{year}{month:02d}-STAR-L2i_GHRSST-SST-iQuam-V2.10-v01.0-fv01.0.nc')
 
@@ -41,7 +41,6 @@ if __name__ == "__main__":
 
     months = iquam.month.values[selection].astype(int)
     days = iquam.day.values[selection].astype(int)
-
     dates = [datetime(2020, months[i], days[i]) for i in range(len(months))]
 
     climatology = xr.open_dataset(data_dir / "SST_CCI_climatology" / "SST_1x1_daily.nc")
@@ -50,6 +49,7 @@ if __name__ == "__main__":
     grid.make_5x5_grid_with_covariance()
     grid.plot_map()
     grid.plot_map5()
+    grid.plot_covariance()
     grid.plot_map_unc5()
-    grid.plot_map_unc5_example()
+    grid.plot_covariance_row(-33.0, -142.0)
 

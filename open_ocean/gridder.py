@@ -56,9 +56,9 @@ class Grid:
         self.sigma_m[self.type == 5] = 0.1
         self.sigma_b[self.type == 5] = 0.05
 
-        self.x_index = self.get_x_index(self.lon, climatology)
-        self.y_index = self.get_y_index(self.lat, climatology)
-        self.t_index = self.get_t_index(self.date, climatology)
+        self.x_index = self.get_x_index(self.lon)
+        self.y_index = self.get_y_index(self.lat)
+        self.t_index = self.get_t_index(self.date)
 
         self.data = np.empty((360, 180))
 
@@ -122,7 +122,6 @@ class Grid:
         self.data5 = np.full((1, 36, 72), np.nan)
         self.nobs5 = np.zeros((1, 36, 72))
         self.unc = np.full((1, 36, 72), np.nan)
-        self.unc_example = np.full((1, 36, 72), np.nan)
 
         self.data5[0, y, x] = means[:]
         self.nobs5[0, y, x] = nobs[:]
@@ -165,24 +164,9 @@ class Grid:
             selection = np.ix_(group['xy5'].values, group['xy5'].values)
             self.covariance[selection] = self.covariance[selection] + matrix[:, :]
 
-        # Let's plot the covariance matrix (zoom in, it's pretty).
-        plt.pcolormesh(self.covariance)
-        plt.title("Covariance")
-        plt.show()
-
         # Extract the diagonal of the covariance matrix and populate the uncertainty grid
         self.unc[:, :, :] = np.sqrt((self.covariance[np.diag_indices(2592)]).reshape((1, 36, 72)))
         self.unc[self.unc == 0] = np.nan
-
-        #47N 7W?
-        #13N 48E?
-        #-33N -142E!
-        x = int(self.get_x_index(np.array([-142]), n)/5)
-        y = int(self.get_y_index(np.array([-33]), n)/5)
-        xy = x + y * 72
-
-        self.unc_example[:, :, :] = np.sqrt((self.covariance[xy, :]).reshape((1, 36, 72)))
-        self.unc_example[self.unc_example == 0] = np.nan
 
     def anomalize(self, climatology):
         """Calculate anomalies relative to the input climatology.
@@ -200,25 +184,23 @@ class Grid:
         clim_values = climatology.sst.values[self.t_index, self.y_index, self.x_index]
         return self.value - clim_values
 
-    def get_x_index(self, lon, climatology):
+    def get_x_index(self, lon):
         """Calculate the x index from the input longitudes for the input climatology."""
         index = (lon + 180).astype(int)
         return index
 
-    def get_y_index(self, lat, climatology):
+    def get_y_index(self, lat):
         """Calculate the y index from the input latitudes for the input climatology."""
         index = (lat + 90).astype(int)
         return index
 
-    def get_t_index(self, date, climatology):
+    def get_t_index(self, date):
         """Calculate the t index from the input date for the input climatology.
 
         Parameters
         ----------
         date: datetime.datetime
             array of datetime objects for which the time index will be calculated.
-        climatology: xarray.DataArray
-            Unused
 
         Returns
         -------
@@ -234,15 +216,22 @@ class Grid:
         day_number = cumulative_month_lengths[month - 1] + day - 1
         return day_number.astype(int)
 
-    def plot_map(self):
-        """Plot the grid as a map"""
-        latitudes = np.linspace(-89.5, 89.5, 180)
-        longitudes = np.linspace(-179.5, 179.5, 360)
-        times = pd.date_range(start=f'1851-01-01', freq='1D', periods=365)
+    @staticmethod
+    def make_xarray(data_array, res=5):
+        if res == 5:
+            latitudes = np.linspace(-87.5, 87.5, 36)
+            longitudes = np.linspace(-177.5, 177.5, 72)
+        elif res == 1:
+            latitudes = np.linspace(-89.5, 89.5, 180)
+            longitudes = np.linspace(-179.5, 179.5, 360)
+
+        ntime = data_array.shape[0]
+
+        times = pd.date_range(start=f'1851-01-01', freq='1D', periods=ntime)
 
         ds = xr.Dataset({
             'sst': xr.DataArray(
-                data=self.data,
+                data=data_array,
                 dims=['time', 'latitude', 'longitude'],
                 coords={'time': times, 'latitude': latitudes, 'longitude': longitudes},
                 attrs={'long_name': 'sea surface temperature', 'units': 'K'}
@@ -250,118 +239,55 @@ class Grid:
         },
             attrs={'project': 'NA'}
         )
+        return ds
 
-        ds = ds.mean(dim='time')
+    def plot_covariance(self):
+        # Let's plot the covariance matrix (zoom in, it's pretty).
+        plt.pcolormesh(self.covariance)
+        plt.title("Covariance")
+        plt.show()
 
+    def plot_covariance_row(self, lat, lon):
+        """Plot a row from the covariance matrix based on specified latitude and longitude."""
+        # Work out which xy grid cell the lat and lon point is in
+        x = int(self.get_x_index(np.array([lon])) / 5)
+        y = int(self.get_y_index(np.array([lat])) / 5)
+        xy = x + y * 72
+        # Extract the climatology row to the uncertainty grid
+        unc_example = np.full((1, 36, 72), np.nan)
+        unc_example[:, :, :] = np.sqrt((self.covariance[xy, :]).reshape((1, 36, 72)))
+        unc_example[unc_example == 0] = np.nan
+        # Plot the grid
+        ds = Grid.make_xarray(unc_example, res=5)
+        Grid.plot_generic_map(ds, np.arange(0, 0.2, 0.01))
+
+    @staticmethod
+    def plot_generic_map(ds, levels):
         plt.figure()
         proj = ccrs.PlateCarree()
         p = ds.sst.plot(
             transform=proj,
             subplot_kws={'projection': proj},
-            levels=np.arange(-3, 3, 0.2)
+            levels=levels
 
         )
         p.axes.coastlines()
         plt.title("")
-        # plt.savefig(image_filename, bbox_inches='tight')
         plt.show()
         plt.close('all')
+
+    def plot_map(self):
+        """Plot the grid as a map"""
+        ds = Grid.make_xarray(self.data, res=1)
+        ds = ds.mean(dim='time')
+        Grid.plot_generic_map(ds, np.arange(-3, 3, 0.2))
 
     def plot_map5(self):
         """Plot the 5x5 grid as a map"""
-        latitudes = np.linspace(-87.5, 87.5, 36)
-        longitudes = np.linspace(-177.5, 177.5, 72)
-        times = pd.date_range(start=f'1851-01-01', freq='1MS', periods=1)
-
-        ds = xr.Dataset({
-            'sst': xr.DataArray(
-                data=self.data5,
-                dims=['time', 'latitude', 'longitude'],
-                coords={'time': times, 'latitude': latitudes, 'longitude': longitudes},
-                attrs={'long_name': 'sea surface temperature', 'units': 'K'}
-            )
-        },
-            attrs={'project': 'NA'}
-        )
-
-        ds = ds.mean(dim='time')
-
-        plt.figure()
-        proj = ccrs.PlateCarree()
-        p = ds.sst.plot(
-            transform=proj,
-            subplot_kws={'projection': proj},
-            levels=np.arange(-3, 3, 0.2)
-
-        )
-        p.axes.coastlines()
-        plt.title("")
-        # plt.savefig(image_filename, bbox_inches='tight')
-        plt.show()
-        plt.close('all')
+        ds = Grid.make_xarray(self.data5, res=5)
+        Grid.plot_generic_map(ds, np.arange(-3, 3, 0.2))
 
     def plot_map_unc5(self):
         """Plot a map of the uncertainties at 5x5 resolution"""
-        latitudes = np.linspace(-87.5, 87.5, 36)
-        longitudes = np.linspace(-177.5, 177.5, 72)
-        times = pd.date_range(start=f'1851-01-01', freq='1MS', periods=1)
-
-        ds = xr.Dataset({
-            'sst': xr.DataArray(
-                data=self.unc,
-                dims=['time', 'latitude', 'longitude'],
-                coords={'time': times, 'latitude': latitudes, 'longitude': longitudes},
-                attrs={'long_name': 'sea surface temperature', 'units': 'K'}
-            )
-        },
-            attrs={'project': 'NA'}
-        )
-
-        ds = ds.mean(dim='time')
-
-        plt.figure()
-        proj = ccrs.PlateCarree()
-        p = ds.sst.plot(
-            transform=proj,
-            subplot_kws={'projection': proj},
-            levels=np.arange(0, 1.5, 0.1)
-
-        )
-        p.axes.coastlines()
-        plt.title("")
-        # plt.savefig(image_filename, bbox_inches='tight')
-        plt.show()
-        plt.close('all')
-
-    def plot_map_unc5_example(self):
-        """Plot a map of the uncertainties at 5x5 resolution"""
-        latitudes = np.linspace(-87.5, 87.5, 36)
-        longitudes = np.linspace(-177.5, 177.5, 72)
-        times = pd.date_range(start=f'1851-01-01', freq='1MS', periods=1)
-
-        ds = xr.Dataset({
-            'sst': xr.DataArray(
-                data=self.unc_example,
-                dims=['time', 'latitude', 'longitude'],
-                coords={'time': times, 'latitude': latitudes, 'longitude': longitudes},
-                attrs={'long_name': 'sea surface temperature', 'units': 'K'}
-            )
-        },
-            attrs={'project': 'NA'}
-        )
-
-        ds = ds.mean(dim='time')
-
-        plt.figure()
-        proj = ccrs.PlateCarree()
-        p = ds.sst.plot(
-            transform=proj,
-            subplot_kws={'projection': proj},
-            levels=np.arange(0, 0.2, 0.01)
-
-        )
-        p.axes.coastlines()
-        plt.title("")
-        # plt.savefig(image_filename, bbox_inches='tight')
-        plt.show()
-        plt.close('all')
+        ds = Grid.make_xarray(self.unc, res=5)
+        Grid.plot_generic_map(ds, np.arange(0, 1.5, 0.1))

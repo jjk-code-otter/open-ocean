@@ -51,5 +51,5 @@ if __name__ == "__main__":
     grid.plot_map()
     grid.plot_map5()
     grid.plot_map_unc5()
-
+    grid.plot_map_unc5_example()
 

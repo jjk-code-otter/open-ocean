@@ -122,6 +122,7 @@ class Grid:
         self.data5 = np.full((1, 36, 72), np.nan)
         self.nobs5 = np.zeros((1, 36, 72))
         self.unc = np.full((1, 36, 72), np.nan)
+        self.unc_example = np.full((1, 36, 72), np.nan)
 
         self.data5[0, y, x] = means[:]
         self.nobs5[0, y, x] = nobs[:]
@@ -172,6 +173,16 @@ class Grid:
         # Extract the diagonal of the covariance matrix and populate the uncertainty grid
         self.unc[:, :, :] = np.sqrt((self.covariance[np.diag_indices(2592)]).reshape((1, 36, 72)))
         self.unc[self.unc == 0] = np.nan
+
+        #47N 7W
+        #13N 48E
+        #-33 -142
+        x = int(self.get_x_index(np.array([-142]), n)/5)
+        y = int(self.get_y_index(np.array([-33]), n)/5)
+        xy = x + y * 72
+
+        self.unc_example[:, :, :] = np.sqrt((self.covariance[xy, :]).reshape((1, 36, 72)))
+        self.unc_example[self.unc_example == 0] = np.nan
 
     def anomalize(self, climatology):
         """Calculate anomalies relative to the input climatology.
@@ -314,6 +325,39 @@ class Grid:
             transform=proj,
             subplot_kws={'projection': proj},
             levels=np.arange(0, 1.5, 0.1)
+
+        )
+        p.axes.coastlines()
+        plt.title("")
+        # plt.savefig(image_filename, bbox_inches='tight')
+        plt.show()
+        plt.close('all')
+
+    def plot_map_unc5_example(self):
+        """Plot a map of the uncertainties at 5x5 resolution"""
+        latitudes = np.linspace(-87.5, 87.5, 36)
+        longitudes = np.linspace(-177.5, 177.5, 72)
+        times = pd.date_range(start=f'1851-01-01', freq='1MS', periods=1)
+
+        ds = xr.Dataset({
+            'sst': xr.DataArray(
+                data=self.unc_example,
+                dims=['time', 'latitude', 'longitude'],
+                coords={'time': times, 'latitude': latitudes, 'longitude': longitudes},
+                attrs={'long_name': 'sea surface temperature', 'units': 'K'}
+            )
+        },
+            attrs={'project': 'NA'}
+        )
+
+        ds = ds.mean(dim='time')
+
+        plt.figure()
+        proj = ccrs.PlateCarree()
+        p = ds.sst.plot(
+            transform=proj,
+            subplot_kws={'projection': proj},
+            levels=np.arange(0, 0.2, 0.01)
 
         )
         p.axes.coastlines()

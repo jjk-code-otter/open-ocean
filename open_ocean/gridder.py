@@ -35,6 +35,8 @@ class Grid:
         self.id = id
         self.type = type
 
+        # Assign uncertainties for different observation types
+        # Ships
         self.sigma_m = np.zeros(len(self.lat)) + 0.74
         self.sigma_b = np.zeros(len(self.lat)) + 0.71
 
@@ -53,7 +55,6 @@ class Grid:
         # Argo
         self.sigma_m[self.type == 5] = 0.1
         self.sigma_b[self.type == 5] = 0.05
-
 
         self.x_index = self.get_x_index(self.lon, climatology)
         self.y_index = self.get_y_index(self.lat, climatology)
@@ -79,7 +80,7 @@ class Grid:
         )
 
         means = df.groupby("uid")["value"].mean().values
-        nobs = df.groupby("uid")["value"].count().values
+        nobs = df.groupby("uid")["x"].count().values
         x = df.groupby("uid")["x"].first().values
         y = df.groupby("uid")["y"].first().values
         t = df.groupby("uid")["t"].first().values
@@ -90,11 +91,14 @@ class Grid:
         self.data[t, y, x] = means[:]
         self.nobs[t, y, x] = nobs[:]
 
-    def make_covariance(self):
+    def make_5x5_grid_with_covariance(self):
+        # The indices in the 5x5 grid are simply related to the 1x1 grid already calculated
         xindex5 = (self.x_index / 5).astype(int)
         yindex5 = (self.y_index / 5).astype(int)
+        # Need an index that uniquely identifies every one of the 2592 5x5 grid cells
         xy5 = xindex5 + yindex5 * 72
 
+        # Pack the data into a DataFrame so that we can use Pandas magic
         df = pd.DataFrame(
             {
                 'xy5': xy5,
@@ -107,24 +111,26 @@ class Grid:
             }
         )
 
+        # Calculate the mean, number of observations and the indices of each grid cell with data in it.
         means = df.groupby("xy5")["value"].mean().values
-        nobs = df.groupby("xy5")["value"].count().values
+        nobs = df.groupby("xy5")["x"].count().values
         x = df.groupby("xy5")["x"].first().values
         y = df.groupby("xy5")["y"].first().values
         xy5_unique = df.groupby("xy5")["xy5"].first().values
 
+        # Make a grid and copy the grid cell averages into the grid
         self.data5 = np.full((1, 36, 72), np.nan)
         self.nobs5 = np.zeros((1, 36, 72))
         self.unc = np.full((1, 36, 72), np.nan)
 
         self.data5[0, y, x] = means[:]
         self.nobs5[0, y, x] = nobs[:]
+        nobs_flat = self.nobs5.flatten()  # We'll need this to calculate weights
 
-        nobs_flat = self.nobs5.flatten()
-
+        # Group the data by ID and grid cell
         groups = df.groupby(['id', 'xy5'])
 
-        agg_groups = groups.agg(
+        aggregated_groups = groups.agg(
             {
                 'xy5': 'first',
                 'x': 'first',
@@ -135,51 +141,79 @@ class Grid:
             }
         )
 
-        groups2 = agg_groups.groupby(['id'])
+        groups2 = aggregated_groups.groupby(['id'])
 
-        covariance = np.zeros((2592,2592))
+        self.covariance = np.zeros((2592, 2592))
 
+        # loop over the IDs and for each ID calculate the contribution to the covariance matrix and add it on.
         for thisid, group in groups2:
+            # Using a simple aritmetic mean of each 5 degree grid cell
             weights = group['value'].values / nobs_flat[group['xy5'].values]
 
-            weight_sigma_m_sq = weights * weights * group['sigma_m'].values * group['sigma_m'].values
+            # Calculate the bits that we need to make the covariance
+            weight_sigma_m_sq = weights * weights * weights * group['sigma_m'].values * group['sigma_m'].values
             weight_sigma_b = weights * group['sigma_b'].values
 
+            # The error covariance matrix for this ship is the outer product of the weight time sigma_b
             matrix = np.outer(weight_sigma_b, weight_sigma_b)
-
+            # On the diagonal we need to add the uncorrelated part of the uncertainty.
             n = len(weight_sigma_b)
-
             matrix[np.diag_indices(n)] = matrix[np.diag_indices(n)] + weight_sigma_m_sq
 
+            # Use the indices to locate this ID's contribution to the overall covariance matrix and add it on.
             selection = np.ix_(group['xy5'].values, group['xy5'].values)
+            self.covariance[selection] = self.covariance[selection] + matrix[:, :]
 
-            covariance[selection] = covariance[selection] + matrix[:,:]
-
-
-        plt.pcolormesh(covariance)
+        # Let's plot the covariance matrix (zoom in, it's pretty).
+        plt.pcolormesh(self.covariance)
         plt.title("Covariance")
         plt.show()
 
-        self.unc[:, :, :] = np.sqrt((covariance[np.diag_indices(2592)]).reshape((1, 36, 72)))
+        # Extract the diagonal of the covariance matrix and populate the uncertainty grid
+        self.unc[:, :, :] = np.sqrt((self.covariance[np.diag_indices(2592)]).reshape((1, 36, 72)))
         self.unc[self.unc == 0] = np.nan
 
-        print()
-
-        # group according to ID
-
     def anomalize(self, climatology):
+        """Calculate anomalies relative to the input climatology.
+
+        Parameters
+        ----------
+        climatology: xarray.DataArray
+            The climatology that will be used to calculate the anomalies.
+
+        Returns
+        -------
+        np.ndarray
+            Array containing the anomalies.
+        """
         clim_values = climatology.sst.values[self.t_index, self.y_index, self.x_index]
         return self.value - clim_values
 
     def get_x_index(self, lon, climatology):
+        """Calculate the x index from the input longitudes for the input climatology."""
         index = (lon + 180).astype(int)
         return index
 
     def get_y_index(self, lat, climatology):
+        """Calculate the y index from the input latitudes for the input climatology."""
         index = (lat + 90).astype(int)
         return index
 
     def get_t_index(self, date, climatology):
+        """Calculate the t index from the input date for the input climatology.
+
+        Parameters
+        ----------
+        date: datetime.datetime
+            array of datetime objects for which the time index will be calculated.
+        climatology: xarray.DataArray
+            Unused
+
+        Returns
+        -------
+        np.ndarray
+            Array of time indices
+        """
         month = np.array([d.month for d in date])
         day = np.array([d.day for d in date])
 
@@ -190,6 +224,7 @@ class Grid:
         return day_number.astype(int)
 
     def plot_map(self):
+        """Plot the grid as a map"""
         latitudes = np.linspace(-89.5, 89.5, 180)
         longitudes = np.linspace(-179.5, 179.5, 360)
         times = pd.date_range(start=f'1851-01-01', freq='1D', periods=365)
@@ -222,6 +257,7 @@ class Grid:
         plt.close('all')
 
     def plot_map5(self):
+        """Plot the 5x5 grid as a map"""
         latitudes = np.linspace(-87.5, 87.5, 36)
         longitudes = np.linspace(-177.5, 177.5, 72)
         times = pd.date_range(start=f'1851-01-01', freq='1MS', periods=1)
@@ -254,6 +290,7 @@ class Grid:
         plt.close('all')
 
     def plot_map_unc5(self):
+        """Plot a map of the uncertainties at 5x5 resolution"""
         latitudes = np.linspace(-87.5, 87.5, 36)
         longitudes = np.linspace(-177.5, 177.5, 72)
         times = pd.date_range(start=f'1851-01-01', freq='1MS', periods=1)

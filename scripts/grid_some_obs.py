@@ -47,7 +47,7 @@ if __name__ == "__main__":
     climatology = xr.open_dataset(data_dir / "SST_CCI_climatology" / "SST_1x1_daily.nc")
 
     grid = gridder.Grid(2020, 10, id, lats, lons, dates, values, type, climatology)
-    grid.make_covariance()
+    grid.make_5x5_grid_with_covariance()
     grid.plot_map()
     grid.plot_map5()
     grid.plot_map_unc5()

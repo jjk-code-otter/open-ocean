@@ -91,6 +91,41 @@ class Grid:
         self.data[t, y, x] = means[:]
         self.nobs[t, y, x] = nobs[:]
 
+    def make_5x5_grid(self):
+        # The indices in the 5x5 grid are simply related to the 1x1 grid already calculated
+        xindex5 = (self.x_index / 5).astype(int)
+        yindex5 = (self.y_index / 5).astype(int)
+        # Need an index that uniquely identifies every one of the 2592 5x5 grid cells
+        xy5 = xindex5 + yindex5 * 72
+
+        # Pack the data into a DataFrame so that we can use Pandas magic
+        df = pd.DataFrame(
+            {
+                'xy5': xy5,
+                'x': xindex5,
+                'y': yindex5,
+                'value': self.anomalies,
+                'id': self.id,
+                'sigma_m': self.sigma_m,
+                'sigma_b': self.sigma_b,
+            }
+        )
+
+        # Calculate the mean, number of observations and the indices of each grid cell with data in it.
+        means = df.groupby("xy5")["value"].mean().values
+        nobs = df.groupby("xy5")["x"].count().values
+        x = df.groupby("xy5")["x"].first().values
+        y = df.groupby("xy5")["y"].first().values
+        xy5_unique = df.groupby("xy5")["xy5"].first().values
+
+        # Make a grid and copy the grid cell averages into the grid
+        self.data5 = np.full((1, 36, 72), np.nan)
+        self.nobs5 = np.zeros((1, 36, 72))
+        self.unc = np.full((1, 36, 72), np.nan)
+
+        self.data5[0, y, x] = means[:]
+        self.nobs5[0, y, x] = nobs[:]
+
     def make_5x5_grid_with_covariance(self):
         # The indices in the 5x5 grid are simply related to the 1x1 grid already calculated
         xindex5 = (self.x_index / 5).astype(int)
@@ -228,7 +263,7 @@ class Grid:
         return weighted_mean.sst.values[0]
 
     @staticmethod
-    def make_xarray(data_array, res=5):
+    def make_xarray(data_array, res=5, times=None):
         if res == 5:
             latitudes = np.linspace(-87.5, 87.5, 36)
             longitudes = np.linspace(-177.5, 177.5, 72)
@@ -238,7 +273,8 @@ class Grid:
 
         ntime = data_array.shape[0]
 
-        times = pd.date_range(start=f'1851-01-01', freq='1D', periods=ntime)
+        if times is None:
+            times = pd.date_range(start=f'1851-01-01', freq='1D', periods=ntime)
 
         ds = xr.Dataset({
             'sst': xr.DataArray(

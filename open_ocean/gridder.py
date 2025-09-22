@@ -319,8 +319,7 @@ class Grid:
         p = ds.sst.plot(
             transform=proj,
             subplot_kws={'projection': proj},
-            levels=levels
-
+            levels=levels,
         )
         p.axes.coastlines()
         plt.title("")

@@ -78,6 +78,9 @@ def get_cds_year_month(year, month):
     client.retrieve(dataset, request).download()
 
 if __name__ == '__main__':
-    for year, month in product(range(1981, 2010), range(1, 13)):
+    for year, month in product(range(1851, 2026), range(1, 13)):
         print(year, month)
-        get_iquam_year_month(year, month)
+        if year >= 1981:
+            get_iquam_year_month(year, month)
+
+        get_cds_year_month(year, month)

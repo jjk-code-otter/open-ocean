@@ -23,6 +23,27 @@ import os
 from datetime import datetime
 import matplotlib.pyplot as plt
 
+
+def grid_selection(iquam, selection):
+
+    id = iquam.platform_id.values[selection]
+    type = iquam.platform_type.values[selection]
+    lats = iquam.lat.values[selection]
+    lons = iquam.lon.values[selection]
+    values = iquam.sst.values[selection]
+
+    # Convert dates
+    months = iquam.month.values[selection].astype(int)
+    days = iquam.day.values[selection].astype(int)
+    dates = [datetime(2020, months[i], days[i]) for i in range(len(months))]
+
+    # Grid up the data
+    grid = gridder.Grid(2020, 10, id, lats, lons, dates, values, type, climatology)
+    grid.make_5x5_grid_with_covariance()
+
+    return grid
+
+
 if __name__ == "__main__":
     data_dir = Path(os.getenv("DATADIR"))
     coder = xr.coders.CFDatetimeCoder(time_unit="s")
@@ -40,15 +61,27 @@ if __name__ == "__main__":
 
     climatology = xr.open_dataset(data_dir / "SST_CCI_climatology" / "SST_1x1_daily.nc")
 
-    n_time = (2010 - 1981 + 1) * 12
+    n_time = (2025 - 1981 + 1) * 12
 
     all_data = np.zeros((n_time, 36, 72)) + np.nan
     all_nobs = np.zeros((n_time, 36, 72))
     all_unc = np.zeros((n_time, 36, 72)) + np.nan
 
+    ship_data = np.zeros((n_time, 36, 72)) + np.nan
+    ship_nobs = np.zeros((n_time, 36, 72))
+    ship_unc = np.zeros((n_time, 36, 72)) + np.nan
+
+    drifter_data = np.zeros((n_time, 36, 72)) + np.nan
+    drifter_nobs = np.zeros((n_time, 36, 72))
+    drifter_unc = np.zeros((n_time, 36, 72)) + np.nan
+
+    argo_data = np.zeros((n_time, 36, 72)) + np.nan
+    argo_nobs = np.zeros((n_time, 36, 72))
+    argo_unc = np.zeros((n_time, 36, 72)) + np.nan
+
     count = -1
 
-    for year, month in product(range(1981, 2010), range(1, 13)):
+    for year, month in product(range(1981, 2011), range(1, 13)):
         file = data_dir / 'IQUAM' / f'{year}{month:02d}-STAR-L2i_GHRSST-SST-iQuam-V2.10-v01.0-fv01.0.nc'
 
         if not (file.exists()):
@@ -60,23 +93,9 @@ if __name__ == "__main__":
         quality = iquam.quality_level.values
         selection = quality >= 4
 
-        id = iquam.platform_id.values[selection]
-        type = iquam.platform_type.values[selection]
-        lats = iquam.lat.values[selection]
-        lons = iquam.lon.values[selection]
-        values = iquam.sst.values[selection]
-
-        # Convert dates
-        months = iquam.month.values[selection].astype(int)
-        days = iquam.day.values[selection].astype(int)
-        dates = [datetime(2020, months[i], days[i]) for i in range(len(months))]
-
-        # Grid up the data
-        grid = gridder.Grid(2020, 10, id, lats, lons, dates, values, type, climatology)
-        grid.make_5x5_grid_with_covariance()
-
-        # Add to the full grid
         count += 1
+
+        grid = grid_selection(iquam, selection)
         all_data[count, :, :] = grid.data5[0, :, :]
         all_nobs[count, :, :] = grid.nobs5[0, :, :]
         all_unc[count, :, :] = grid.unc[0, :, :]
@@ -93,12 +112,49 @@ if __name__ == "__main__":
 
         print(f"{year} {month:02d}: {gmsst:.3f}")
 
+        # Just ships
+        selection = (quality >= 4) & (iquam.platform_type.values == 1)
+        grid = grid_selection(iquam, selection)
+        ship_data[count, :, :] = grid.data5[0, :, :]
+        ship_nobs[count, :, :] = grid.nobs5[0, :, :]
+        ship_unc[count, :, :] = grid.unc[0, :, :]
+
+        # Just drifters
+        selection = (quality >= 4) & (iquam.platform_type.values == 2)
+        grid = grid_selection(iquam, selection)
+        drifter_data[count, :, :] = grid.data5[0, :, :]
+        drifter_nobs[count, :, :] = grid.nobs5[0, :, :]
+        drifter_unc[count, :, :] = grid.unc[0, :, :]
+
+        # Just Argo
+        selection = (quality >= 4) & (iquam.platform_type.values == 5)
+        grid = grid_selection(iquam, selection)
+        argo_data[count, :, :] = grid.data5[0, :, :]
+        argo_nobs[count, :, :] = grid.nobs5[0, :, :]
+        argo_unc[count, :, :] = grid.unc[0, :, :]
+
+
+
     # Transfer the data to xarray DataArrays and write out
     all_data = all_data[0:count + 1, :, :]
     all_unc = all_unc[0:count + 1, :, :]
     all_nobs = all_nobs[0:count + 1, :, :]
 
+    ship_data = ship_data[0:count + 1, :, :]
+    ship_unc = ship_unc[0:count + 1, :, :]
+    ship_nobs = ship_nobs[0:count + 1, :, :]
+
+    drifter_data = drifter_data[0:count + 1, :, :]
+    drifter_unc = drifter_unc[0:count + 1, :, :]
+    drifter_nobs = drifter_nobs[0:count + 1, :, :]
+
+    argo_data = argo_data[0:count + 1, :, :]
+    argo_unc = argo_unc[0:count + 1, :, :]
+    argo_nobs = argo_nobs[0:count + 1, :, :]
+
+
     date_range = pd.date_range(start=f'1981-09-01', freq='1MS', periods=count + 1)
+
     oo_anomalies = gridder.Grid.make_xarray(all_data, res=5, times=date_range)
     oo_uncertainty = gridder.Grid.make_xarray(all_unc, res=5, times=date_range)
     oo_numobs = gridder.Grid.make_xarray(all_nobs, res=5, times=date_range)
@@ -106,6 +162,33 @@ if __name__ == "__main__":
     oo_anomalies.to_netcdf(data_dir / "IQUAM" / "oo_anomalies.nc")
     oo_uncertainty.to_netcdf(data_dir / "IQUAM" / "oo_uncertainty.nc")
     oo_numobs.to_netcdf(data_dir / "IQUAM" / "oo_numobs.nc")
+
+
+    oo_anomalies = gridder.Grid.make_xarray(ship_data, res=5, times=date_range)
+    oo_uncertainty = gridder.Grid.make_xarray(ship_unc, res=5, times=date_range)
+    oo_numobs = gridder.Grid.make_xarray(ship_nobs, res=5, times=date_range)
+
+    oo_anomalies.to_netcdf(data_dir / "IQUAM" / "oo_anomalies_ship.nc")
+    oo_uncertainty.to_netcdf(data_dir / "IQUAM" / "oo_uncertainty_ship.nc")
+    oo_numobs.to_netcdf(data_dir / "IQUAM" / "oo_numobs_ship.nc")
+
+
+    oo_anomalies = gridder.Grid.make_xarray(drifter_data, res=5, times=date_range)
+    oo_uncertainty = gridder.Grid.make_xarray(drifter_unc, res=5, times=date_range)
+    oo_numobs = gridder.Grid.make_xarray(drifter_nobs, res=5, times=date_range)
+
+    oo_anomalies.to_netcdf(data_dir / "IQUAM" / "oo_anomalies_drifter.nc")
+    oo_uncertainty.to_netcdf(data_dir / "IQUAM" / "oo_uncertainty_drifter.nc")
+    oo_numobs.to_netcdf(data_dir / "IQUAM" / "oo_numobs_drifter.nc")
+
+
+    oo_anomalies = gridder.Grid.make_xarray(argo_data, res=5, times=date_range)
+    oo_uncertainty = gridder.Grid.make_xarray(argo_unc, res=5, times=date_range)
+    oo_numobs = gridder.Grid.make_xarray(argo_nobs, res=5, times=date_range)
+
+    oo_anomalies.to_netcdf(data_dir / "IQUAM" / "oo_anomalies_argo.nc")
+    oo_uncertainty.to_netcdf(data_dir / "IQUAM" / "oo_uncertainty_argo.nc")
+    oo_numobs.to_netcdf(data_dir / "IQUAM" / "oo_numobs_argo.nc")
 
     # Summary plot
     plt.plot(time, ts)

@@ -36,7 +36,7 @@ class Grid:
         self.type = type
 
         # Assign uncertainties for different observation types
-        # Ships
+        # Ships and default for anything
         self.sigma_m = np.zeros(len(self.lat)) + 0.74
         self.sigma_b = np.zeros(len(self.lat)) + 0.71
 
@@ -88,8 +88,9 @@ class Grid:
         self.data = np.full((365, 180, 360), np.nan)
         self.nobs = np.zeros((365, 180, 360))
 
-        self.data[t, y, x] = means[:]
-        self.nobs[t, y, x] = nobs[:]
+        if len(t) != 0:
+            self.data[t, y, x] = means[:]
+            self.nobs[t, y, x] = nobs[:]
 
     def make_5x5_grid(self):
         # The indices in the 5x5 grid are simply related to the 1x1 grid already calculated
@@ -216,6 +217,8 @@ class Grid:
         np.ndarray
             Array containing the anomalies.
         """
+        if len(self.value) < 1:
+            return np.array([])
         clim_values = climatology.sst.values[self.t_index, self.y_index, self.x_index]
         return self.value - clim_values
 
@@ -244,6 +247,9 @@ class Grid:
         np.ndarray
             Array of time indices
         """
+        if len(date) < 1:
+            return np.array([])
+
         month = np.array([d.month for d in date])
         day = np.array([d.day for d in date])
 

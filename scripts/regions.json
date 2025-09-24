@@ -1,0 +1,5 @@
+{
+  "Global": {"name": "global", "lat_range": [-90,90], "lon_range": [-180,180]},
+  "NH": {"name": "northern_hemisphere", "lat_range": [0,90], "lon_range": [-180, 180]},
+  "SH": {"name": "southern_hemisphere", "lat_range": [-90,0], "lon_range": [-180, 180]}
+}

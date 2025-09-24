@@ -15,6 +15,7 @@
 #   along with this program.  If not, see <https://www.gnu.org/licenses/>.
 from open_ocean import gridder
 from itertools import product
+import json
 import xarray as xr
 import pandas as pd
 import numpy as np
@@ -26,6 +27,7 @@ import matplotlib.pyplot as plt
 
 def convert_dates(months, days):
     return [datetime(2020, months[i], days[i]) for i in range(len(months))]
+
 
 def grid_selection(iquam, selection):
     id = iquam.platform_id.values[selection]
@@ -49,22 +51,29 @@ def grid_selection(iquam, selection):
     return grid
 
 
+def convert_climatology_to_ocean_areas(climatology):
+    # Use the SST values in the climatology as an ocean mask. Set area to 1 for gridcells with SSTs, 0 otherwise
+    ocean = np.where(np.isnan(climatology.sst[0].values), 0.0, 1.0)
+    # Areas are the ocean area in the grid cell
+    areas = np.zeros((36, 72))
+    for xx, yy in product(range(72), range(36)):
+        areas[yy, xx] = np.mean(ocean[yy * 5:(yy + 1) * 5, xx * 5:(xx + 1) * 5])
+    return areas
+
+
 if __name__ == "__main__":
     data_dir = Path(os.getenv("DATADIR"))
     coder = xr.coders.CFDatetimeCoder(time_unit="s")
 
     ts = []
+    ts_unc = []
     time = []
 
-    hadsst4 = xr.open_dataset(data_dir / "ManagedData" / "Data" / "HadSST4" / "HadSST.4.1.1.0_median.nc")
-
-    lat_slice = hadsst4.tos.sel(latitude=slice(-90, 90))
-    lat_lon_slice = lat_slice.sel(longitude=slice(-180, 180))
-    weights = np.cos(np.deg2rad(lat_lon_slice.latitude))
-    weighted_mean = lat_lon_slice.weighted(weights).mean(("longitude", "latitude"))
-    h4_time = np.arange(len(weighted_mean)) / 12. + 1850.
+    with open('regions.json', 'r') as f:
+        regions = json.load(f)
 
     climatology = xr.open_dataset(data_dir / "SST_CCI_climatology" / "SST_1x1_daily.nc")
+    areas = convert_climatology_to_ocean_areas(climatology)
 
     n_time = (2025 - 1981 + 1) * 12
 
@@ -84,6 +93,12 @@ if __name__ == "__main__":
     argo_nobs = np.zeros((n_time, 36, 72))
     argo_unc = np.zeros((n_time, 36, 72)) + np.nan
 
+    region_names = [key for key in regions.keys()]
+    component_names = ["all", "all_unc", "ship", "ship_unc", "drifter", "drifter_unc", "argo", "argo_unc"]
+
+    mux = pd.MultiIndex.from_product([component_names, region_names])
+    time_series = pd.DataFrame(columns=mux)
+
     count = -1
 
     for year, month in product(range(1981, 2011), range(1, 13)):
@@ -100,7 +115,17 @@ if __name__ == "__main__":
 
         count += 1
 
+        row = []
+
         grid = grid_selection(iquam, selection)
+        for key, entry in regions.items():
+            gmsst, gmsst_unc = grid.calculate_area_average_with_covariance(
+                areas=areas, lat_range=entry["lat_range"], lon_range=entry["lon_range"]
+            )
+            row.append(gmsst)
+            row.append(gmsst_unc)
+            print(f"{key} {year} {month:02d}: {gmsst:.3f} ± {gmsst_unc:.3f}")
+
         all_data[count, :, :] = grid.data5[0, :, :]
         all_nobs[count, :, :] = grid.numobs5[0, :, :]
         all_unc[count, :, :] = grid.unc5[0, :, :]
@@ -111,15 +136,20 @@ if __name__ == "__main__":
         grid.plot_map_unc_5x5(filename=data_dir / "IQUAM" / "Figures" / f"unc_{year}{month:02d}.png")
 
         # Calculate the area average for the grid
-        gmsst = grid.calculate_area_average([-90, 90], [-180, 180])
-        ts.append(gmsst)
-        time.append(year + (month - 1) / 12.)
 
-        print(f"{year} {month:02d}: {gmsst:.3f}")
+        ts.append(gmsst)
+        ts_unc.append(gmsst_unc)
+        time.append(year + (month - 1) / 12.)
 
         # Just ships
         selection = (quality >= 4) & (iquam.platform_type.values == 1)
         grid = grid_selection(iquam, selection)
+        for key, entry in regions.items():
+            gmsst, gmsst_unc = grid.calculate_area_average_with_covariance(
+                areas=areas, lat_range=entry["lat_range"], lon_range=entry["lon_range"]
+            )
+            row.append(gmsst)
+            row.append(gmsst_unc)
         ship_data[count, :, :] = grid.data5[0, :, :]
         ship_nobs[count, :, :] = grid.numobs5[0, :, :]
         ship_unc[count, :, :] = grid.unc5[0, :, :]
@@ -127,6 +157,12 @@ if __name__ == "__main__":
         # Just drifters
         selection = (quality >= 4) & (iquam.platform_type.values == 2)
         grid = grid_selection(iquam, selection)
+        for key, entry in regions.items():
+            gmsst, gmsst_unc = grid.calculate_area_average_with_covariance(
+                areas=areas, lat_range=entry["lat_range"], lon_range=entry["lon_range"]
+            )
+            row.append(gmsst)
+            row.append(gmsst_unc)
         drifter_data[count, :, :] = grid.data5[0, :, :]
         drifter_nobs[count, :, :] = grid.numobs5[0, :, :]
         drifter_unc[count, :, :] = grid.unc5[0, :, :]
@@ -134,9 +170,45 @@ if __name__ == "__main__":
         # Just Argo
         selection = (quality >= 4) & (iquam.platform_type.values == 5)
         grid = grid_selection(iquam, selection)
+        for key, entry in regions.items():
+            gmsst, gmsst_unc = grid.calculate_area_average_with_covariance(
+                areas=areas, lat_range=entry["lat_range"], lon_range=entry["lon_range"]
+            )
+            row.append(gmsst)
+            row.append(gmsst_unc)
         argo_data[count, :, :] = grid.data5[0, :, :]
         argo_nobs[count, :, :] = grid.numobs5[0, :, :]
         argo_unc[count, :, :] = grid.unc5[0, :, :]
+
+        time_series.loc[count] = row
+
+        time_series.to_csv(data_dir / "IQUAM" / "OutputData" / "timeseries_with_uncertainty.csv")
+
+    avships = time_series['ship']
+    avships_unc = time_series['ship_unc']
+    plt.fill_between(
+        time, avships['Global'] + 2 * avships_unc['Global'], avships['Global'] - 2 * avships_unc['Global'],
+        label="Ships", color="blue", alpha=0.5
+    )
+
+    avdrifters = time_series['drifter']
+    avdrifters_unc = time_series['drifter_unc']
+    plt.fill_between(
+        time, avdrifters['Global'] + 2 * avdrifters_unc['Global'],
+              avdrifters['Global'] - 2 * avdrifters_unc['Global'], label="Drifters", color="orange", alpha=0.5
+    )
+
+    avargo = time_series['argo']
+    avargo_unc = time_series['argo_unc']
+    plt.fill_between(
+        time, avargo['Global'] + 2 * avargo_unc['Global'], avargo['Global'] - 2 * avargo_unc['Global'],
+        label="Argo", color="green", alpha=0.5
+    )
+
+    plt.legend()
+    plt.savefig(data_dir / "IQUAM" / "Figures" / "timeseries_with_uncertainty.png")
+
+    time_series.to_csv(data_dir / "IQUAM" / "OutputData" / "timeseries_with_uncertainty.csv")
 
     # Transfer the data to xarray DataArrays and write out
     all_data = all_data[0:count + 1, :, :]
@@ -188,10 +260,3 @@ if __name__ == "__main__":
     oo_anomalies.to_netcdf(data_dir / "IQUAM" / "oo_anomalies_argo.nc")
     oo_uncertainty.to_netcdf(data_dir / "IQUAM" / "oo_uncertainty_argo.nc")
     oo_numobs.to_netcdf(data_dir / "IQUAM" / "oo_numobs_argo.nc")
-
-    # Summary plot
-    plt.plot(time, ts)
-    plt.plot(h4_time, weighted_mean)
-    plt.xlim(1975, 2010)
-    plt.savefig(data_dir / "IQUAM" / "Figures" / "IQUAM_grid_average_time_series.png")
-    plt.close()

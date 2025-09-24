@@ -13,6 +13,7 @@
 #
 #   You should have received a copy of the GNU General Public License
 #   along with this program.  If not, see <https://www.gnu.org/licenses/>.
+import copy
 
 import xarray as xr
 import pandas as pd
@@ -77,6 +78,8 @@ class Grid:
         self.data5 = None
         self.numobs5 = None
         self.unc5 = None
+
+        self.covariance = None
 
     def add_uncertainties(self):
         uncertainties = [
@@ -347,13 +350,81 @@ class Grid:
         day_number = cumulative_month_lengths[month - 1] + day - 1
         return day_number.astype(int)
 
-    def calculate_area_average(self, lat_range, lon_range):
+    def calculate_area_average_with_covariance(self, areas=None, lat_range=None, lon_range=None):
+        """
+        Calculate the area average of the grid and the corresponding uncertainty using the covariance. Grid cells
+        are weighted by the cosine of the latitude. An additional keyword argument can be used to provide the
+        areas of the grid cells to consider in the calculation.
+
+        Parameters
+        ----------
+        areas: np.ndarray or None
+            Array containing the area of each grid box
+        lat_range: list or None
+            Range of latitudes to consider in the calculation
+        lon_range: list or None
+            Range of longitudes to consider in the calculation. Longitudes must be specified in the range -180 to 180.
+            If the first longitude is lower than the second then the average will be calculated between the two. If
+            the first longitude is higher than the second then the average will be calculated from the first to 180
+            degrees and from -180 degrees to the second. This is used to calculate area averages that cross the
+            dateline.
+
+        Returns
+        -------
+        float, float
+            Area average and uncertainty of the average
+        """
+        if lat_range is not None:
+            if lat_range[0] > lat_range[1]:
+                raise ValueError("First element of latitude selection must be less than the second")
+
+        # Use a deepcopy here otherwise the step where missing data are set to zero changes the original grid
+        ds = Grid.make_xarray(copy.deepcopy(self.data5), res=5)
+        weights = np.cos(np.deg2rad(ds.latitude)).values
+        weights = np.repeat(np.reshape(weights, (1, 36, 1)), 72, axis=2)
+
+    #    mask = np.full(weights.shape, False)
+        if lat_range is not None:
+            latitudes = np.repeat(np.reshape(ds.latitude.values, (1, 36, 1)), 72, axis=2)
+            mask = (latitudes < lat_range[0]) | (latitudes > lat_range[1])
+            weights[mask] = 0.0
+
+        if lon_range is not None:
+            longitudes = np.repeat(np.reshape(ds.longitude.values, (1, 1, 72)), 36, axis=1)
+            if lon_range[0] < lon_range[1]:
+                mask = (longitudes < lon_range[0]) | (longitudes > lon_range[1])
+                weights[mask] = 0.0
+            else:
+                mask = (longitudes > lon_range[0]) & (longitudes < lon_range[1])
+                weights[mask] = 0.0
+
+        if areas is not None:
+            weights[0, :, :] = weights[0, :, :] * areas[:,:]
+
+        non_missing = ~np.isnan(ds.sst.values)
+        weight_sum = np.sum(weights[non_missing])
+        if weight_sum != 0:
+            average = np.sum(ds.sst.values[non_missing] * weights[non_missing]) / weight_sum
+        else:
+            return np.nan, np.nan
+
+        weights = np.reshape(weights, (1, 2592))
+        data_array = np.reshape(ds.sst.values, (1, 2592))
+
+        weights[np.isnan(data_array)] = 0
+        data_array[np.isnan(data_array)] = 0
+
+        unc_sq = np.matmul(np.matmul(weights, self.covariance), weights.transpose())
+        weight_sum = np.sum(weights)
+        unc = np.sqrt(unc_sq) / weight_sum
+
+        return average, unc.item()
+
+    def calculate_area_average(self):
         """Calculate aree average from the input latitude and longitude ranges"""
         ds = Grid.make_xarray(self.data5, res=5)
-        lat_slice = ds.sel(latitude=slice(lat_range[0], lat_range[1]))
-        lat_lon_slice = lat_slice.sel(longitude=slice(lon_range[0], lon_range[1]))
-        weights = np.cos(np.deg2rad(lat_lon_slice.latitude))
-        weighted_mean = lat_lon_slice.weighted(weights).mean(("longitude", "latitude"))
+        weights = np.cos(np.deg2rad(ds.latitude))
+        weighted_mean = ds.weighted(weights).mean(("longitude", "latitude"))
         return weighted_mean.sst.values[0]
 
     @staticmethod

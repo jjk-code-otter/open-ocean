@@ -17,56 +17,81 @@
 import xarray as xr
 import pandas as pd
 import numpy as np
-from pathlib import Path
-import os
+from scipy.stats import trim_mean
 import matplotlib.pyplot as plt
 import cartopy.crs as ccrs
 
 
+def trim_mean_wrapper(inarr):
+    return trim_mean(inarr, proportiontocut=0.1)
+
 class Grid:
 
-    def __init__(self, year, month, id, lat, lon, date, value, type, climatology):
+    def __init__(self, year, month, platform_id, lat, lon, date, value, platform_type, climatology):
         self.year = year
         self.month = month
-        self.lat = lat
-        self.lon = lon
-        self.date = date
+
+        # Calculate anomalies
+        self.x_index = self.get_x_index(lon)
+        self.y_index = self.get_y_index(lat)
+        self.t_index = self.get_t_index(date)
         self.value = value
-        self.id = id
-        self.type = type
+        self.anomalies = self.anomalize(climatology)
+
+        # Eliminate any nans in the anomalies that arise from climatology coverage
+        non_missing = ~np.isnan(self.anomalies)
+
+        self.x_index = self.x_index[non_missing]
+        self.y_index = self.y_index[non_missing]
+        self.t_index = self.t_index[non_missing]
+        self.value = self.value[non_missing]
+        self.anomalies = self.anomalies[non_missing]
+
+        self.lat = lat[non_missing]
+        self.lon = lon[non_missing]
+
+        self.date = [d for present, d in zip(non_missing, date) if present]
+
+        self.id = platform_id[non_missing]
+        self.type = platform_type[non_missing]
+
+        # Fill the uncertainties
+        self.sigma_m = np.zeros(len(self.lat))
+        self.sigma_b = np.zeros(len(self.lat))
+        self.add_uncertainties()
+
+        # Initialise some attributes that will be filled later by the gridding methods
+        self.weights = None
+
+        self.data = None
+        self.numobs = None
+
+        self.data5 = None
+        self.numobs5 = None
+
+        # Grid something
+        self.do_1x1_gridding()
+
+    def add_uncertainties(self):
+        uncertainties = [
+            [1, 0.74, 0.71],  # Ships
+            [2, 0.26, 0.29],  # Drifters
+            [6, 0.26, 0.29],  # Drifters
+            [3, 0.3, 0.2],  # Moorings
+            [4, 0.3, 0.2],  # Moorings
+            [5, 0.1, 0.05],  # Argo
+        ]
 
         # Assign uncertainties for different observation types
-        # Ships and default for anything
+        # Default value is same as for ships.
         self.sigma_m = np.zeros(len(self.lat)) + 0.74
         self.sigma_b = np.zeros(len(self.lat)) + 0.71
 
-        # Drifters
-        self.sigma_m[self.type == 2] = 0.26
-        self.sigma_b[self.type == 2] = 0.29
-        self.sigma_m[self.type == 6] = 0.26
-        self.sigma_b[self.type == 6] = 0.29
+        for u in uncertainties:
+            self.sigma_m[self.type == u[0]] = u[1]
+            self.sigma_b[self.type == u[0]] = u[2]
 
-        # Moorings
-        self.sigma_m[self.type == 3] = 0.3
-        self.sigma_b[self.type == 3] = 0.2
-        self.sigma_m[self.type == 4] = 0.3
-        self.sigma_b[self.type == 4] = 0.2
-
-        # Argo
-        self.sigma_m[self.type == 5] = 0.1
-        self.sigma_b[self.type == 5] = 0.05
-
-        self.x_index = self.get_x_index(self.lon)
-        self.y_index = self.get_y_index(self.lat)
-        self.t_index = self.get_t_index(self.date)
-
-        self.data = np.empty((360, 180))
-
-        self.anomalies = self.anomalize(climatology)
-
-        self.do_gridding()
-
-    def do_gridding(self):
+    def do_1x1_gridding(self):
         unique_index = self.t_index * 1000000 + self.x_index * 1000 + self.y_index
 
         df = pd.DataFrame(
@@ -86,11 +111,85 @@ class Grid:
         t = df.groupby("uid")["t"].first().values
 
         self.data = np.full((365, 180, 360), np.nan)
-        self.nobs = np.zeros((365, 180, 360))
+        self.numobs = np.zeros((365, 180, 360))
 
         if len(t) != 0:
             self.data[t, y, x] = means[:]
-            self.nobs[t, y, x] = nobs[:]
+            self.numobs[t, y, x] = nobs[:]
+
+    def do_two_step_gridding(self):
+        xy1 = self.t_index * 1000000 + self.x_index * 1000 + self.y_index
+
+        xindex5 = (self.x_index / 5).astype(int)
+        yindex5 = (self.y_index / 5).astype(int)
+        xy5 = xindex5 + yindex5 * 72
+
+        df1 = pd.DataFrame(
+            {
+                "xy1": xy1,
+                "xy5": xy5,
+                "value": self.anomalies,
+                "x": self.x_index,
+                "y": self.y_index,
+                "t": self.t_index,
+                "x5": xindex5,
+                "y5": yindex5,
+            }
+        )
+
+        trimmed_means = df1.groupby("xy1")["value"].agg(trim_mean_wrapper).values
+        nobs = df1.groupby("xy1")["x"].count().values
+        x5 = df1.groupby("xy1")["x5"].first().values
+        y5 = df1.groupby("xy1")["y5"].first().values
+        xy5 = df1.groupby("xy1")["xy5"].first().values
+
+        xy1b = df1.groupby("xy1")["xy1"].first().values
+        weightb = 1/nobs
+
+        df1_match = pd.DataFrame(
+            {
+                "xy1": xy1b,
+                "weightb": weightb,
+            }
+        )
+
+        df5 = pd.DataFrame(
+            {
+                "xy5": xy5,
+                "x5": x5,
+                "y5": y5,
+                "value": trimmed_means,
+                "nobs": nobs
+            }
+        )
+
+        second_mean = df5.groupby("xy5")["value"].agg(trim_mean_wrapper).values
+        nobs = df5.groupby("xy5")["nobs"].sum().values
+        snobs = df5.groupby("xy5")["nobs"].count().values
+        x5 = df5.groupby("xy5")["x5"].first().values
+        y5 = df5.groupby("xy5")["y5"].first().values
+
+        xy5b = df5.groupby("xy5")["xy5"].first().values
+        weightc = 1/snobs
+
+        df2_match = pd.DataFrame(
+            {
+                "xy5": xy5b,
+                "weightc": weightc,
+            }
+        )
+
+        df1 = pd.merge(df1, df1_match, on="xy1", how="left")
+        df1 = pd.merge(df1, df2_match, on="xy5", how="left")
+
+        self.weights = df1.weightb.values * df1.weightc.values
+
+        # Make a grid and copy the grid cell averages into the grid
+        self.data5 = np.full((1, 36, 72), np.nan)
+        self.numobs5 = np.zeros((1, 36, 72))
+
+        self.data5[0, y5, x5] = second_mean[:]
+        self.numobs5[0, y5, x5] = nobs[:]
 
     def make_5x5_grid(self):
         # The indices in the 5x5 grid are simply related to the 1x1 grid already calculated
@@ -119,13 +218,22 @@ class Grid:
         y = df.groupby("xy5")["y"].first().values
         xy5_unique = df.groupby("xy5")["xy5"].first().values
 
+        df_match = pd.DataFrame(
+            {
+                "xy5": xy5_unique,
+                "weight": 1/nobs,
+            }
+        )
+        df = pd.merge(df, df_match, on="xy5", how="left")
+        self.weights = df.weight.values
+
         # Make a grid and copy the grid cell averages into the grid
         self.data5 = np.full((1, 36, 72), np.nan)
-        self.nobs5 = np.zeros((1, 36, 72))
+        self.numobs5 = np.zeros((1, 36, 72))
         self.unc = np.full((1, 36, 72), np.nan)
 
         self.data5[0, y, x] = means[:]
-        self.nobs5[0, y, x] = nobs[:]
+        self.numobs5[0, y, x] = nobs[:]
 
     def make_5x5_grid_with_covariance(self):
         # The indices in the 5x5 grid are simply related to the 1x1 grid already calculated
@@ -154,14 +262,23 @@ class Grid:
         y = df.groupby("xy5")["y"].first().values
         xy5_unique = df.groupby("xy5")["xy5"].first().values
 
+        df_match = pd.DataFrame(
+            {
+                "xy5": xy5_unique,
+                "weight": 1/nobs,
+            }
+        )
+        df = pd.merge(df, df_match, on="xy5", how="left")
+        self.weights = df.weight.values
+
         # Make a grid and copy the grid cell averages into the grid
         self.data5 = np.full((1, 36, 72), np.nan)
-        self.nobs5 = np.zeros((1, 36, 72))
+        self.numobs5 = np.zeros((1, 36, 72))
         self.unc = np.full((1, 36, 72), np.nan)
 
         self.data5[0, y, x] = means[:]
-        self.nobs5[0, y, x] = nobs[:]
-        nobs_flat = self.nobs5.flatten()  # We'll need this to calculate weights
+        self.numobs5[0, y, x] = nobs[:]
+        nobs_flat = self.numobs5.flatten()  # We'll need this to calculate weights
 
         # Group the data by ID and grid cell
         groups = df.groupby(['id', 'xy5'])
@@ -183,7 +300,7 @@ class Grid:
 
         # loop over the IDs and for each ID calculate the contribution to the covariance matrix and add it on.
         for thisid, group in groups2:
-            # Using a simple aritmetic mean of each 5 degree grid cell
+            # Using a simple arithmetic mean of each 5 degree grid cell
             weights = group['value'].values / nobs_flat[group['xy5'].values]
 
             # Calculate the bits that we need to make the covariance
@@ -276,6 +393,8 @@ class Grid:
         elif res == 1:
             latitudes = np.linspace(-89.5, 89.5, 180)
             longitudes = np.linspace(-179.5, 179.5, 360)
+        else:
+            raise ValueError("Invalid res")
 
         ntime = data_array.shape[0]
 

@@ -97,7 +97,7 @@ if __name__ == "__main__":
 
         grid = grid_selection(iquam, selection)
         all_data[count, :, :] = grid.data5[0, :, :]
-        all_nobs[count, :, :] = grid.nobs5[0, :, :]
+        all_nobs[count, :, :] = grid.numobs5[0, :, :]
         all_unc[count, :, :] = grid.unc[0, :, :]
 
         # Plot some progress plots
@@ -116,21 +116,21 @@ if __name__ == "__main__":
         selection = (quality >= 4) & (iquam.platform_type.values == 1)
         grid = grid_selection(iquam, selection)
         ship_data[count, :, :] = grid.data5[0, :, :]
-        ship_nobs[count, :, :] = grid.nobs5[0, :, :]
+        ship_nobs[count, :, :] = grid.numobs5[0, :, :]
         ship_unc[count, :, :] = grid.unc[0, :, :]
 
         # Just drifters
         selection = (quality >= 4) & (iquam.platform_type.values == 2)
         grid = grid_selection(iquam, selection)
         drifter_data[count, :, :] = grid.data5[0, :, :]
-        drifter_nobs[count, :, :] = grid.nobs5[0, :, :]
+        drifter_nobs[count, :, :] = grid.numobs5[0, :, :]
         drifter_unc[count, :, :] = grid.unc[0, :, :]
 
         # Just Argo
         selection = (quality >= 4) & (iquam.platform_type.values == 5)
         grid = grid_selection(iquam, selection)
         argo_data[count, :, :] = grid.data5[0, :, :]
-        argo_nobs[count, :, :] = grid.nobs5[0, :, :]
+        argo_nobs[count, :, :] = grid.numobs5[0, :, :]
         argo_unc[count, :, :] = grid.unc[0, :, :]
 
 

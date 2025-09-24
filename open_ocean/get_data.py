@@ -83,4 +83,4 @@ if __name__ == '__main__':
         if year >= 1981:
             get_iquam_year_month(year, month)
 
-        get_cds_year_month(year, month)
+        #get_cds_year_month(year, month)

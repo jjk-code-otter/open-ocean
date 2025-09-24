@@ -205,6 +205,9 @@ if __name__ == "__main__":
         label="Argo", color="green", alpha=0.5
     )
 
+    plt.xlim(1980, 2012)
+    plt.ylim(-0.5,0.65)
+
     plt.legend()
     plt.savefig(data_dir / "IQUAM" / "Figures" / "timeseries_with_uncertainty.png")
 

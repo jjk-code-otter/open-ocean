@@ -81,15 +81,16 @@ class Grid:
 
         self.covariance = None
 
-    def add_uncertainties(self):
-        uncertainties = [
-            [1, 0.74, 0.71],  # Ships
-            [2, 0.26, 0.29],  # Drifters
-            [6, 0.26, 0.29],  # Drifters
-            [3, 0.3, 0.2],  # Moorings
-            [4, 0.3, 0.2],  # Moorings
-            [5, 0.1, 0.05],  # Argo
-        ]
+    def add_uncertainties(self, uncertainties=None):
+        if uncertainties is None:
+            uncertainties = [
+                [1, 0.74, 0.71],  # Ships
+                [2, 0.26, 0.29],  # Drifters
+                [6, 0.26, 0.29],  # Drifters
+                [3, 0.3, 0.2],  # Moorings
+                [4, 0.3, 0.2],  # Moorings
+                [5, 0.1, 0.05],  # Argo
+            ]
 
         # Assign uncertainties for different observation types
         # Default value is same as for ships.
@@ -383,7 +384,7 @@ class Grid:
         weights = np.cos(np.deg2rad(ds.latitude)).values
         weights = np.repeat(np.reshape(weights, (1, 36, 1)), 72, axis=2)
 
-    #    mask = np.full(weights.shape, False)
+        #    mask = np.full(weights.shape, False)
         if lat_range is not None:
             latitudes = np.repeat(np.reshape(ds.latitude.values, (1, 36, 1)), 72, axis=2)
             mask = (latitudes < lat_range[0]) | (latitudes > lat_range[1])
@@ -399,7 +400,7 @@ class Grid:
                 weights[mask] = 0.0
 
         if areas is not None:
-            weights[0, :, :] = weights[0, :, :] * areas[:,:]
+            weights[0, :, :] = weights[0, :, :] * areas[:, :]
 
         non_missing = ~np.isnan(ds.sst.values)
         weight_sum = np.sum(weights[non_missing])

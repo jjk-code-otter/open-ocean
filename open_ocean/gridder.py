@@ -25,6 +25,7 @@ import cartopy.crs as ccrs
 def trim_mean_wrapper(inarr):
     return trim_mean(inarr, proportiontocut=0.1)
 
+
 class Grid:
 
     def __init__(self, year, month, platform_id, lat, lon, date, value, platform_type, climatology):
@@ -61,15 +62,21 @@ class Grid:
         self.add_uncertainties()
 
         # Initialise some attributes that will be filled later by the gridding methods
+        self.xindex5 = (self.x_index / 5).astype(int)
+        self.yindex5 = (self.y_index / 5).astype(int)
+        self.xy1 = self.t_index * 1000000 + self.x_index * 1000 + self.y_index
+        self.xy5 = self.xindex5 + self.yindex5 * 72
+
         self.weights = None
         self.weights5 = None
 
         self.data = None
         self.numobs = None
+        self.unc = None
 
         self.data5 = None
         self.numobs5 = None
-
+        self.unc5 = None
 
     def add_uncertainties(self):
         uncertainties = [
@@ -91,11 +98,9 @@ class Grid:
             self.sigma_b[self.type == u[0]] = u[2]
 
     def do_1x1_gridding(self):
-        unique_index = self.t_index * 1000000 + self.x_index * 1000 + self.y_index
-
         df = pd.DataFrame(
             {
-                "uid": unique_index,
+                "xy1": self.xy1,
                 "value": self.anomalies,
                 "x": self.x_index,
                 "y": self.y_index,
@@ -103,11 +108,13 @@ class Grid:
             }
         )
 
-        means = df.groupby("uid")["value"].mean().values
-        nobs = df.groupby("uid")["x"].count().values
-        x = df.groupby("uid")["x"].first().values
-        y = df.groupby("uid")["y"].first().values
-        t = df.groupby("uid")["t"].first().values
+        grouped = df.groupby("xy1")
+
+        means = grouped["value"].mean().values
+        nobs = grouped["x"].count().values
+        x = grouped["x"].first().values
+        y = grouped["y"].first().values
+        t = grouped["t"].first().values
 
         self.data = np.full((365, 180, 360), np.nan)
         self.numobs = np.zeros((365, 180, 360))
@@ -117,33 +124,30 @@ class Grid:
             self.numobs[t, y, x] = nobs[:]
 
     def do_two_step_5x5_gridding(self):
-        xy1 = self.t_index * 1000000 + self.x_index * 1000 + self.y_index
-
-        xindex5 = (self.x_index / 5).astype(int)
-        yindex5 = (self.y_index / 5).astype(int)
-        xy5 = xindex5 + yindex5 * 72
-
+        # Build a dataframe for the 1x1 aggregation and then aggregate
         df1 = pd.DataFrame(
             {
-                "xy1": xy1,
-                "xy5": xy5,
+                "xy1": self.xy1,
+                "xy5": self.xy5,
                 "value": self.anomalies,
                 "x": self.x_index,
                 "y": self.y_index,
                 "t": self.t_index,
-                "x5": xindex5,
-                "y5": yindex5,
+                "x5": self.xindex5,
+                "y5": self.yindex5,
             }
         )
 
-        trimmed_means = df1.groupby("xy1")["value"].agg(trim_mean_wrapper).values
-        nobs = df1.groupby("xy1")["x"].count().values
-        x5 = df1.groupby("xy1")["x5"].first().values
-        y5 = df1.groupby("xy1")["y5"].first().values
-        xy5 = df1.groupby("xy1")["xy5"].first().values
+        grouped1 = df1.groupby("xy1")
 
-        xy1b = df1.groupby("xy1")["xy1"].first().values
-        weightb = 1/nobs
+        trimmed_means = grouped1["value"].agg(trim_mean_wrapper).values
+        nobs = grouped1["x"].count().values
+        x5 = grouped1["x5"].first().values
+        y5 = grouped1["y5"].first().values
+        xy5 = grouped1["xy5"].first().values
+
+        xy1b = grouped1["xy1"].first().values
+        weightb = 1 / nobs
 
         df1_match = pd.DataFrame(
             {
@@ -152,6 +156,7 @@ class Grid:
             }
         )
 
+        # Build another dataframe for 5x5 aggregation and then aggregate
         df5 = pd.DataFrame(
             {
                 "xy5": xy5,
@@ -162,14 +167,16 @@ class Grid:
             }
         )
 
-        second_mean = df5.groupby("xy5")["value"].agg(trim_mean_wrapper).values
-        nobs = df5.groupby("xy5")["nobs"].sum().values
-        snobs = df5.groupby("xy5")["nobs"].count().values
-        x5 = df5.groupby("xy5")["x5"].first().values
-        y5 = df5.groupby("xy5")["y5"].first().values
+        grouped5 = df5.groupby("xy5")
 
-        xy5b = df5.groupby("xy5")["xy5"].first().values
-        weightc = 1/snobs
+        second_mean = grouped5["value"].agg(trim_mean_wrapper).values
+        nobs = grouped5["nobs"].sum().values
+        snobs = grouped5["nobs"].count().values
+        x5 = grouped5["x5"].first().values
+        y5 = grouped5["y5"].first().values
+
+        xy5b = grouped5["xy5"].first().values
+        weightc = 1 / snobs
 
         df2_match = pd.DataFrame(
             {
@@ -178,31 +185,26 @@ class Grid:
             }
         )
 
+        # Assign weights to the original observations
         df1 = pd.merge(df1, df1_match, on="xy1", how="left")
         df1 = pd.merge(df1, df2_match, on="xy5", how="left")
-
         self.weights5 = df1.weightb.values * df1.weightc.values
 
         # Make a grid and copy the grid cell averages into the grid
         self.data5 = np.full((1, 36, 72), np.nan)
         self.numobs5 = np.zeros((1, 36, 72))
+        self.unc5 = np.full((1, 36, 72), np.nan)
 
         self.data5[0, y5, x5] = second_mean[:]
         self.numobs5[0, y5, x5] = nobs[:]
 
     def do_one_step_5x5_gridding(self):
-        # The indices in the 5x5 grid are simply related to the 1x1 grid already calculated
-        xindex5 = (self.x_index / 5).astype(int)
-        yindex5 = (self.y_index / 5).astype(int)
-        # Need an index that uniquely identifies every one of the 2592 5x5 grid cells
-        xy5 = xindex5 + yindex5 * 72
-
-        # Pack the data into a DataFrame so that we can use Pandas magic
+        # Pack the data into a DataFrame so that we can use Pandas aggregation magic
         df = pd.DataFrame(
             {
-                'xy5': xy5,
-                'x': xindex5,
-                'y': yindex5,
+                'xy5': self.xy5,
+                'x': self.xindex5,
+                'y': self.yindex5,
                 'value': self.anomalies,
                 'id': self.id,
                 'sigma_m': self.sigma_m,
@@ -211,16 +213,18 @@ class Grid:
         )
 
         # Calculate the mean, number of observations and the indices of each grid cell with data in it.
-        means = df.groupby("xy5")["value"].mean().values
-        nobs = df.groupby("xy5")["x"].count().values
-        x = df.groupby("xy5")["x"].first().values
-        y = df.groupby("xy5")["y"].first().values
-        xy5_unique = df.groupby("xy5")["xy5"].first().values
+        grouped = df.groupby("xy5")
+        means = grouped["value"].mean().values
+        nobs = grouped["x"].count().values
+        x = grouped["x"].first().values
+        y = grouped["y"].first().values
+        xy5_unique = grouped["xy5"].first().values
 
+        # Merge the weights back into the original dataframe
         df_match = pd.DataFrame(
             {
                 "xy5": xy5_unique,
-                "weight": 1/nobs,
+                "weight": 1 / nobs,
             }
         )
         df = pd.merge(df, df_match, on="xy5", how="left")
@@ -229,55 +233,26 @@ class Grid:
         # Make a grid and copy the grid cell averages into the grid
         self.data5 = np.full((1, 36, 72), np.nan)
         self.numobs5 = np.zeros((1, 36, 72))
-        self.unc = np.full((1, 36, 72), np.nan)
+        self.unc5 = np.full((1, 36, 72), np.nan)
 
         self.data5[0, y, x] = means[:]
         self.numobs5[0, y, x] = nobs[:]
 
-    def do_one_step_5x5_gridding_with_covariance(self):
-        # The indices in the 5x5 grid are simply related to the 1x1 grid already calculated
-        xindex5 = (self.x_index / 5).astype(int)
-        yindex5 = (self.y_index / 5).astype(int)
-        # Need an index that uniquely identifies every one of the 2592 5x5 grid cells
-        xy5 = xindex5 + yindex5 * 72
+    def calculate_covariance(self):
+        if self.weights5 is None:
+            raise RuntimeError("No gridding weights. Grid first")
 
-        # Pack the data into a DataFrame so that we can use Pandas magic
         df = pd.DataFrame(
             {
-                'xy5': xy5,
-                'x': xindex5,
-                'y': yindex5,
-                'value': self.anomalies,
+                'xy5': self.xy5,
+                'x': self.xindex5,
+                'y': self.yindex5,
+                'weight5': self.weights5,
                 'id': self.id,
                 'sigma_m': self.sigma_m,
                 'sigma_b': self.sigma_b,
             }
         )
-
-        # Calculate the mean, number of observations and the indices of each grid cell with data in it.
-        means = df.groupby("xy5")["value"].mean().values
-        nobs = df.groupby("xy5")["x"].count().values
-        x = df.groupby("xy5")["x"].first().values
-        y = df.groupby("xy5")["y"].first().values
-        xy5_unique = df.groupby("xy5")["xy5"].first().values
-
-        df_match = pd.DataFrame(
-            {
-                "xy5": xy5_unique,
-                "weight": 1/nobs,
-            }
-        )
-        df = pd.merge(df, df_match, on="xy5", how="left")
-        self.weights5 = df.weight.values
-
-        # Make a grid and copy the grid cell averages into the grid
-        self.data5 = np.full((1, 36, 72), np.nan)
-        self.numobs5 = np.zeros((1, 36, 72))
-        self.unc = np.full((1, 36, 72), np.nan)
-
-        self.data5[0, y, x] = means[:]
-        self.numobs5[0, y, x] = nobs[:]
-        nobs_flat = self.numobs5.flatten()  # We'll need this to calculate weights
 
         # Group the data by ID and grid cell
         groups = df.groupby(['id', 'xy5'])
@@ -287,7 +262,7 @@ class Grid:
                 'xy5': 'first',
                 'x': 'first',
                 'y': 'first',
-                'value': 'count',
+                'weight5': 'sum',
                 'sigma_m': 'first',
                 'sigma_b': 'first',
             }
@@ -299,12 +274,9 @@ class Grid:
 
         # loop over the IDs and for each ID calculate the contribution to the covariance matrix and add it on.
         for thisid, group in groups2:
-            # Using a simple arithmetic mean of each 5 degree grid cell
-            weights = group['value'].values / nobs_flat[group['xy5'].values]
-
             # Calculate the bits that we need to make the covariance
-            weight_sigma_m_sq = weights * weights * weights * group['sigma_m'].values * group['sigma_m'].values
-            weight_sigma_b = weights * group['sigma_b'].values
+            weight_sigma_m_sq = np.power(group['weight5'].values * group['sigma_m'].values, 2)
+            weight_sigma_b = group['weight5'].values * group['sigma_b'].values
 
             # The error covariance matrix for this ship is the outer product of the weight time sigma_b
             matrix = np.outer(weight_sigma_b, weight_sigma_b)
@@ -317,8 +289,8 @@ class Grid:
             self.covariance[selection] = self.covariance[selection] + matrix[:, :]
 
         # Extract the diagonal of the covariance matrix and populate the uncertainty grid
-        self.unc[:, :, :] = np.sqrt((self.covariance[np.diag_indices(2592)]).reshape((1, 36, 72)))
-        self.unc[self.unc == 0] = np.nan
+        self.unc5[:, :, :] = np.sqrt((self.covariance[np.diag_indices(2592)]).reshape((1, 36, 72)))
+        self.unc5[self.unc5 == 0] = np.nan
 
     def calculate_anomalies(self, climatology):
         """Calculate anomalies relative to the input climatology.
@@ -453,18 +425,18 @@ class Grid:
             plt.savefig(filename, )
         plt.close('all')
 
-    def plot_map(self, filename=None):
+    def plot_map_1x1(self, filename=None):
         """Plot the grid as a map"""
         ds = Grid.make_xarray(self.data, res=1)
         ds = ds.mean(dim='time')
         Grid.plot_generic_map(ds, np.arange(-3, 3, 0.2), filename=filename)
 
-    def plot_map5(self, filename=None):
+    def plot_map_5x5(self, filename=None):
         """Plot the 5x5 grid as a map"""
         ds = Grid.make_xarray(self.data5, res=5)
         Grid.plot_generic_map(ds, np.arange(-3, 3, 0.2), filename=filename)
 
-    def plot_map_unc5(self, filename=None):
+    def plot_map_unc_5x5(self, filename=None):
         """Plot a map of the uncertainties at 5x5 resolution"""
-        ds = Grid.make_xarray(self.unc, res=5)
+        ds = Grid.make_xarray(self.unc5, res=5)
         Grid.plot_generic_map(ds, np.arange(0, 1.5, 0.1), filename=filename)

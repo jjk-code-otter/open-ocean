@@ -42,7 +42,9 @@ def grid_selection(iquam, selection):
 
     # Grid up the data
     grid = gridder.Grid(2020, 10, id, lats, lons, dates, values, type, climatology)
-    grid.do_one_step_5x5_gridding_with_covariance()
+    grid.do_1x1_gridding()
+    grid.do_one_step_5x5_gridding()
+    grid.calculate_covariance()
 
     return grid
 
@@ -101,12 +103,12 @@ if __name__ == "__main__":
         grid = grid_selection(iquam, selection)
         all_data[count, :, :] = grid.data5[0, :, :]
         all_nobs[count, :, :] = grid.numobs5[0, :, :]
-        all_unc[count, :, :] = grid.unc[0, :, :]
+        all_unc[count, :, :] = grid.unc5[0, :, :]
 
         # Plot some progress plots
-        grid.plot_map(filename=data_dir / "IQUAM" / "Figures" / f"one_deg_{year}{month:02d}.png")
-        grid.plot_map5(filename=data_dir / "IQUAM" / "Figures" / f"five_deg_{year}{month:02d}.png")
-        grid.plot_map_unc5(filename=data_dir / "IQUAM" / "Figures" / f"unc_{year}{month:02d}.png")
+        grid.plot_map_1x1(filename=data_dir / "IQUAM" / "Figures" / f"one_deg_{year}{month:02d}.png")
+        grid.plot_map_5x5(filename=data_dir / "IQUAM" / "Figures" / f"five_deg_{year}{month:02d}.png")
+        grid.plot_map_unc_5x5(filename=data_dir / "IQUAM" / "Figures" / f"unc_{year}{month:02d}.png")
 
         # Calculate the area average for the grid
         gmsst = grid.calculate_area_average([-90, 90], [-180, 180])
@@ -120,21 +122,21 @@ if __name__ == "__main__":
         grid = grid_selection(iquam, selection)
         ship_data[count, :, :] = grid.data5[0, :, :]
         ship_nobs[count, :, :] = grid.numobs5[0, :, :]
-        ship_unc[count, :, :] = grid.unc[0, :, :]
+        ship_unc[count, :, :] = grid.unc5[0, :, :]
 
         # Just drifters
         selection = (quality >= 4) & (iquam.platform_type.values == 2)
         grid = grid_selection(iquam, selection)
         drifter_data[count, :, :] = grid.data5[0, :, :]
         drifter_nobs[count, :, :] = grid.numobs5[0, :, :]
-        drifter_unc[count, :, :] = grid.unc[0, :, :]
+        drifter_unc[count, :, :] = grid.unc5[0, :, :]
 
         # Just Argo
         selection = (quality >= 4) & (iquam.platform_type.values == 5)
         grid = grid_selection(iquam, selection)
         argo_data[count, :, :] = grid.data5[0, :, :]
         argo_nobs[count, :, :] = grid.numobs5[0, :, :]
-        argo_unc[count, :, :] = grid.unc[0, :, :]
+        argo_unc[count, :, :] = grid.unc5[0, :, :]
 
     # Transfer the data to xarray DataArrays and write out
     all_data = all_data[0:count + 1, :, :]

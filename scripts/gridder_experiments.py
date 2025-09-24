@@ -38,14 +38,16 @@ def grid_selection(iquam, selection):
     dates = [datetime(2020, months[i], days[i]) for i in range(len(months))]
 
     # Grid up the data
-    grid = gridder.Grid(2020, 10, id, lats, lons, dates, values, type, climatology)
-    grid.do_two_step_5x5_gridding()
+    grid2 = gridder.Grid(2020, 10, id, lats, lons, dates, values, type, climatology)
+    grid2.do_two_step_5x5_gridding()
+    grid2.calculate_covariance()
 
     # Grid up the data
-    grid2 = gridder.Grid(2020, 10, id, lats, lons, dates, values, type, climatology)
-    grid2.do_one_step_5x5_gridding_with_covariance()
+    grid = gridder.Grid(2020, 10, id, lats, lons, dates, values, type, climatology)
+    grid.do_one_step_5x5_gridding()
+    grid.calculate_covariance()
 
-    return grid, grid2
+    return grid2, grid
 
 
 if __name__ == "__main__":
@@ -55,6 +57,12 @@ if __name__ == "__main__":
     ts1 = []
     ts2 = []
     time = []
+    ship_weight1 = []
+    ship_weight2 = []
+    drifter_weight1 = []
+    drifter_weight2 = []
+    unc1 = []
+    unc2 = []
 
     hadsst4 = xr.open_dataset(data_dir / "ManagedData" / "Data" / "HadSST4" / "HadSST.4.1.1.0_median.nc")
 
@@ -74,7 +82,7 @@ if __name__ == "__main__":
 
     count = -1
 
-    for year, month in product(range(2006, 2011), range(1, 13)):
+    for year, month in product(range(1981, 2011), range(1, 13)):
         file = data_dir / 'IQUAM' / f'{year}{month:02d}-STAR-L2i_GHRSST-SST-iQuam-V2.10-v01.0-fv01.0.nc'
 
         if not (file.exists()):
@@ -88,22 +96,33 @@ if __name__ == "__main__":
 
         count += 1
 
-        grid, grid2 = grid_selection(iquam, selection)
-        all_data[count, :, :] = grid.data5[0, :, :]
-        all_nobs[count, :, :] = grid.numobs5[0, :, :]
-        #all_unc[count, :, :] = grid.unc[0, :, :]
+        grid_two_step, grid_one_step = grid_selection(iquam, selection)
+        all_data[count, :, :] = grid_two_step.data5[0, :, :]
+        all_nobs[count, :, :] = grid_two_step.numobs5[0, :, :]
+        all_unc[count, :, :] = grid_two_step.unc5[0, :, :]
 
-        print("2 step", np.sum(grid.weights5[grid.type == 1]), np.sum(grid.weights5[grid.type == 2]))
-        print("1 step", np.sum(grid2.weights5[grid.type == 1]), np.sum(grid2.weights5[grid.type == 2]))
+        ship_weight1.append(np.sum(grid_one_step.weights5[grid_one_step.type == 1]))
+        ship_weight2.append(np.sum(grid_two_step.weights5[grid_two_step.type == 1]))
+
+        drifter_weight1.append(np.sum(grid_one_step.weights5[grid_one_step.type == 2]))
+        drifter_weight2.append(np.sum(grid_two_step.weights5[grid_two_step.type == 2]))
+
+        unc1.append(np.mean(grid_one_step.unc5[~np.isnan(grid_one_step.unc5)]))
+        unc2.append(np.mean(grid_two_step.unc5[~np.isnan(grid_two_step.unc5)]))
+
+        print(f"1 step unc {unc1[-1]:.3f}")
+        print(f"2 step unc {unc2[-1]:.3f}")
+
+        print(f"1 step ship: {ship_weight1[-1]:.3f} drifter: {drifter_weight1[-1]:.3f}")
+        print(f"2 step ship: {ship_weight2[-1]:.3f} drifter: {drifter_weight2[-1]:.3f}")
 
         # Plot some progress plots
-        #grid.plot_map(filename=data_dir / "IQUAM" / "Figures" / f"two_step_one_deg_{year}{month:02d}.png")
-        grid.plot_map5(filename=data_dir / "IQUAM" / "Figures" / f"two_step_five_deg_{year}{month:02d}.png")
-        #grid.plot_map_unc5(filename=data_dir / "IQUAM" / "Figures" / f"two_step_unc_{year}{month:02d}.png")
+        grid_two_step.plot_map_5x5(filename=data_dir / "IQUAM" / "Figures" / f"two_step_five_deg_{year}{month:02d}.png")
+        grid_two_step.plot_map_unc_5x5(filename=data_dir / "IQUAM" / "Figures" / f"two_step_unc_{year}{month:02d}.png")
 
         # Calculate the area average for the grid
-        gmsst1 = grid.calculate_area_average([-90, 90], [-180, 180])
-        gmsst2 = grid2.calculate_area_average([-90, 90], [-180, 180])
+        gmsst1 = grid_one_step.calculate_area_average([-90, 90], [-180, 180])
+        gmsst2 = grid_two_step.calculate_area_average([-90, 90], [-180, 180])
         ts1.append(gmsst1)
         ts2.append(gmsst2)
         time.append(year + (month - 1) / 12.)
@@ -112,22 +131,40 @@ if __name__ == "__main__":
 
     # Transfer the data to xarray DataArrays and write out
     all_data = all_data[0:count + 1, :, :]
-    #all_unc = all_unc[0:count + 1, :, :]
+    all_unc = all_unc[0:count + 1, :, :]
     all_nobs = all_nobs[0:count + 1, :, :]
 
     date_range = pd.date_range(start=f'1981-09-01', freq='1MS', periods=count + 1)
 
     oo_anomalies = gridder.Grid.make_xarray(all_data, res=5, times=date_range)
-    #oo_uncertainty = gridder.Grid.make_xarray(all_unc, res=5, times=date_range)
+    oo_uncertainty = gridder.Grid.make_xarray(all_unc, res=5, times=date_range)
     oo_numobs = gridder.Grid.make_xarray(all_nobs, res=5, times=date_range)
 
     oo_anomalies.to_netcdf(data_dir / "IQUAM" / "oo_anomalies_twostep.nc")
-    #oo_uncertainty.to_netcdf(data_dir / "IQUAM" / "oo_uncertainty_twostep.nc")
+    oo_uncertainty.to_netcdf(data_dir / "IQUAM" / "oo_uncertainty_twostep.nc")
     oo_numobs.to_netcdf(data_dir / "IQUAM" / "oo_numobs_twostep.nc")
 
+    plt.plot(time, ship_weight1, label="Ship weight one-step")
+    plt.plot(time, ship_weight2, label="Ship weight two-step")
+    plt.plot(time, drifter_weight1, label="Drifter weight one-step")
+    plt.plot(time, drifter_weight2, label="Drifter weight two-step")
+    plt.legend()
+    plt.xlim(1979, 2012)
+    plt.ylim(0.0, 1000)
+    plt.savefig(data_dir / "IQUAM" / "Figures" / "weights_comparison_two_step.png")
+    plt.close()
+
+    plt.plot(time, unc1, label="One step")
+    plt.plot(time, unc2, label="Two step")
+    plt.legend()
+    plt.xlim(1979, 2012)
+    plt.ylim(0.0, 0.5)
+    plt.savefig(data_dir / "IQUAM" / "Figures" / "unc_comparison_two_step.png")
+    plt.close()
+
     # Summary plot
-    plt.plot(time, ts1, label="2-step grid")
-    plt.plot(time, ts2, label="1-step grid")
+    plt.plot(time, ts1, label="1-step grid")
+    plt.plot(time, ts2, label="2-step grid")
     plt.legend()
     plt.xlim(1979, 2012)
     plt.savefig(data_dir / "IQUAM" / "Figures" / "IQUAM_grid_average_time_series_two_step.png")

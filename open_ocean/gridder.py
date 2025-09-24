@@ -36,7 +36,7 @@ class Grid:
         self.y_index = self.get_y_index(lat)
         self.t_index = self.get_t_index(date)
         self.value = value
-        self.anomalies = self.anomalize(climatology)
+        self.anomalies = self.calculate_anomalies(climatology)
 
         # Eliminate any nans in the anomalies that arise from climatology coverage
         non_missing = ~np.isnan(self.anomalies)
@@ -62,6 +62,7 @@ class Grid:
 
         # Initialise some attributes that will be filled later by the gridding methods
         self.weights = None
+        self.weights5 = None
 
         self.data = None
         self.numobs = None
@@ -69,8 +70,6 @@ class Grid:
         self.data5 = None
         self.numobs5 = None
 
-        # Grid something
-        self.do_1x1_gridding()
 
     def add_uncertainties(self):
         uncertainties = [
@@ -117,7 +116,7 @@ class Grid:
             self.data[t, y, x] = means[:]
             self.numobs[t, y, x] = nobs[:]
 
-    def do_two_step_gridding(self):
+    def do_two_step_5x5_gridding(self):
         xy1 = self.t_index * 1000000 + self.x_index * 1000 + self.y_index
 
         xindex5 = (self.x_index / 5).astype(int)
@@ -182,7 +181,7 @@ class Grid:
         df1 = pd.merge(df1, df1_match, on="xy1", how="left")
         df1 = pd.merge(df1, df2_match, on="xy5", how="left")
 
-        self.weights = df1.weightb.values * df1.weightc.values
+        self.weights5 = df1.weightb.values * df1.weightc.values
 
         # Make a grid and copy the grid cell averages into the grid
         self.data5 = np.full((1, 36, 72), np.nan)
@@ -191,7 +190,7 @@ class Grid:
         self.data5[0, y5, x5] = second_mean[:]
         self.numobs5[0, y5, x5] = nobs[:]
 
-    def make_5x5_grid(self):
+    def do_one_step_5x5_gridding(self):
         # The indices in the 5x5 grid are simply related to the 1x1 grid already calculated
         xindex5 = (self.x_index / 5).astype(int)
         yindex5 = (self.y_index / 5).astype(int)
@@ -225,7 +224,7 @@ class Grid:
             }
         )
         df = pd.merge(df, df_match, on="xy5", how="left")
-        self.weights = df.weight.values
+        self.weights5 = df.weight.values
 
         # Make a grid and copy the grid cell averages into the grid
         self.data5 = np.full((1, 36, 72), np.nan)
@@ -235,7 +234,7 @@ class Grid:
         self.data5[0, y, x] = means[:]
         self.numobs5[0, y, x] = nobs[:]
 
-    def make_5x5_grid_with_covariance(self):
+    def do_one_step_5x5_gridding_with_covariance(self):
         # The indices in the 5x5 grid are simply related to the 1x1 grid already calculated
         xindex5 = (self.x_index / 5).astype(int)
         yindex5 = (self.y_index / 5).astype(int)
@@ -269,7 +268,7 @@ class Grid:
             }
         )
         df = pd.merge(df, df_match, on="xy5", how="left")
-        self.weights = df.weight.values
+        self.weights5 = df.weight.values
 
         # Make a grid and copy the grid cell averages into the grid
         self.data5 = np.full((1, 36, 72), np.nan)
@@ -321,7 +320,7 @@ class Grid:
         self.unc[:, :, :] = np.sqrt((self.covariance[np.diag_indices(2592)]).reshape((1, 36, 72)))
         self.unc[self.unc == 0] = np.nan
 
-    def anomalize(self, climatology):
+    def calculate_anomalies(self, climatology):
         """Calculate anomalies relative to the input climatology.
 
         Parameters

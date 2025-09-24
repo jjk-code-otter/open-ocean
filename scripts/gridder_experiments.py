@@ -39,11 +39,11 @@ def grid_selection(iquam, selection):
 
     # Grid up the data
     grid = gridder.Grid(2020, 10, id, lats, lons, dates, values, type, climatology)
-    grid.do_two_step_gridding()
+    grid.do_two_step_5x5_gridding()
 
     # Grid up the data
     grid2 = gridder.Grid(2020, 10, id, lats, lons, dates, values, type, climatology)
-    grid2.make_5x5_grid_with_covariance()
+    grid2.do_one_step_5x5_gridding_with_covariance()
 
     return grid, grid2
 
@@ -93,8 +93,8 @@ if __name__ == "__main__":
         all_nobs[count, :, :] = grid.numobs5[0, :, :]
         #all_unc[count, :, :] = grid.unc[0, :, :]
 
-        print("2 step", np.sum(grid.weights[grid.type == 1]), np.sum(grid.weights[grid.type == 2]))
-        print("1 step", np.sum(grid2.weights[grid.type == 1]), np.sum(grid2.weights[grid.type == 2]))
+        print("2 step", np.sum(grid.weights5[grid.type == 1]), np.sum(grid.weights5[grid.type == 2]))
+        print("1 step", np.sum(grid2.weights5[grid.type == 1]), np.sum(grid2.weights5[grid.type == 2]))
 
         # Plot some progress plots
         #grid.plot_map(filename=data_dir / "IQUAM" / "Figures" / f"two_step_one_deg_{year}{month:02d}.png")

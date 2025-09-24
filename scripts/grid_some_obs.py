@@ -24,8 +24,10 @@ from datetime import datetime
 import matplotlib.pyplot as plt
 
 
-def grid_selection(iquam, selection):
+def convert_dates(months, days):
+    return [datetime(2020, months[i], days[i]) for i in range(len(months))]
 
+def grid_selection(iquam, selection):
     id = iquam.platform_id.values[selection]
     type = iquam.platform_type.values[selection]
     lats = iquam.lat.values[selection]
@@ -33,13 +35,14 @@ def grid_selection(iquam, selection):
     values = iquam.sst.values[selection]
 
     # Convert dates
-    months = iquam.month.values[selection].astype(int)
-    days = iquam.day.values[selection].astype(int)
-    dates = [datetime(2020, months[i], days[i]) for i in range(len(months))]
+    dates = convert_dates(
+        iquam.month.values[selection].astype(int),
+        iquam.day.values[selection].astype(int)
+    )
 
     # Grid up the data
     grid = gridder.Grid(2020, 10, id, lats, lons, dates, values, type, climatology)
-    grid.make_5x5_grid_with_covariance()
+    grid.do_one_step_5x5_gridding_with_covariance()
 
     return grid
 
@@ -133,8 +136,6 @@ if __name__ == "__main__":
         argo_nobs[count, :, :] = grid.numobs5[0, :, :]
         argo_unc[count, :, :] = grid.unc[0, :, :]
 
-
-
     # Transfer the data to xarray DataArrays and write out
     all_data = all_data[0:count + 1, :, :]
     all_unc = all_unc[0:count + 1, :, :]
@@ -152,7 +153,6 @@ if __name__ == "__main__":
     argo_unc = argo_unc[0:count + 1, :, :]
     argo_nobs = argo_nobs[0:count + 1, :, :]
 
-
     date_range = pd.date_range(start=f'1981-09-01', freq='1MS', periods=count + 1)
 
     oo_anomalies = gridder.Grid.make_xarray(all_data, res=5, times=date_range)
@@ -163,7 +163,6 @@ if __name__ == "__main__":
     oo_uncertainty.to_netcdf(data_dir / "IQUAM" / "oo_uncertainty.nc")
     oo_numobs.to_netcdf(data_dir / "IQUAM" / "oo_numobs.nc")
 
-
     oo_anomalies = gridder.Grid.make_xarray(ship_data, res=5, times=date_range)
     oo_uncertainty = gridder.Grid.make_xarray(ship_unc, res=5, times=date_range)
     oo_numobs = gridder.Grid.make_xarray(ship_nobs, res=5, times=date_range)
@@ -172,7 +171,6 @@ if __name__ == "__main__":
     oo_uncertainty.to_netcdf(data_dir / "IQUAM" / "oo_uncertainty_ship.nc")
     oo_numobs.to_netcdf(data_dir / "IQUAM" / "oo_numobs_ship.nc")
 
-
     oo_anomalies = gridder.Grid.make_xarray(drifter_data, res=5, times=date_range)
     oo_uncertainty = gridder.Grid.make_xarray(drifter_unc, res=5, times=date_range)
     oo_numobs = gridder.Grid.make_xarray(drifter_nobs, res=5, times=date_range)
@@ -180,7 +178,6 @@ if __name__ == "__main__":
     oo_anomalies.to_netcdf(data_dir / "IQUAM" / "oo_anomalies_drifter.nc")
     oo_uncertainty.to_netcdf(data_dir / "IQUAM" / "oo_uncertainty_drifter.nc")
     oo_numobs.to_netcdf(data_dir / "IQUAM" / "oo_numobs_drifter.nc")
-
 
     oo_anomalies = gridder.Grid.make_xarray(argo_data, res=5, times=date_range)
     oo_uncertainty = gridder.Grid.make_xarray(argo_unc, res=5, times=date_range)

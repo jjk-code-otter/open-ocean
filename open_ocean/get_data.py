@@ -27,7 +27,7 @@ def get_iquam_year_month(year, month):
     url = (f"https://star.nesdis.noaa.gov/pub/socd/sst/iquam/v2.10/"
            f"{year}{month:02d}-STAR-L2i_GHRSST-SST-iQuam-V2.10-v01.0-fv01.0.nc")
 
-    data_dir = Path(os.getenv("DATADIR"))
+    data_dir = Path(os.getenv("OODIR"))
     out_path = data_dir / 'IQUAM' / f'{year}{month:02d}-STAR-L2i_GHRSST-SST-iQuam-V2.10-v01.0-fv01.0.nc'
 
     if out_path.exists():

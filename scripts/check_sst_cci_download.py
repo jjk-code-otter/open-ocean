@@ -9,7 +9,7 @@ import cf_xarray
 from cartopy.util import add_cyclic_point
 import matplotlib.pyplot as plt
 
-data_dir = os.getenv("DATADIR")
+data_dir = os.getenv("OODIR")
 
 output_grid = np.full((365, 180, 360), np.nan)
 output_grid_stdev = np.full((365, 180, 360), np.nan)

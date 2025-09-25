@@ -4,7 +4,7 @@ import os
 
 import xarray as xa
 
-data_dir = os.getenv("DATADIR")
+data_dir = os.getenv("OODIR")
 
 for i in range(365):
     filename = f"D{i + 1:03d}-ESACCI-L4_GHRSST-SSTdepth-Climatology-GLOB_CDR3.0-v02.0-fv01.0.nc"

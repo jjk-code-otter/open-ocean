@@ -62,7 +62,7 @@ def convert_climatology_to_ocean_areas(climatology):
 
 
 if __name__ == "__main__":
-    data_dir = Path(os.getenv("DATADIR"))
+    data_dir = Path(os.getenv("OODIR"))
     coder = xr.coders.CFDatetimeCoder(time_unit="s")
 
     ts = []
@@ -101,7 +101,7 @@ if __name__ == "__main__":
 
     count = -1
 
-    for year, month in product(range(1981, 2011), range(1, 13)):
+    for year, month in product(range(1981, 2017), range(1, 13)):
         file = data_dir / 'IQUAM' / f'{year}{month:02d}-STAR-L2i_GHRSST-SST-iQuam-V2.10-v01.0-fv01.0.nc'
 
         if not (file.exists()):
@@ -205,8 +205,8 @@ if __name__ == "__main__":
         label="Argo", color="green", alpha=0.5
     )
 
-    plt.xlim(1980, 2012)
-    plt.ylim(-0.5,0.65)
+    plt.xlim(1980, 2018)
+    plt.ylim(-0.5,0.85)
 
     plt.legend()
     plt.savefig(data_dir / "IQUAM" / "Figures" / "timeseries_with_uncertainty.png")

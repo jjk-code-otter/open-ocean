@@ -51,7 +51,7 @@ def grid_selection(iquam, selection):
 
 
 if __name__ == "__main__":
-    data_dir = Path(os.getenv("DATADIR"))
+    data_dir = Path(os.getenv("OODIR"))
     coder = xr.coders.CFDatetimeCoder(time_unit="s")
 
     ts1 = []

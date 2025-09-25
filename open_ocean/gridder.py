@@ -85,6 +85,7 @@ class Grid:
     def add_sampling_uncertainties(self, sampling_unc):
         month_array = sampling_unc.sst.values[self.month - 1, :, :]
         self.sigma_s = month_array[self.yindex5, self.xindex5]
+        self.sigma_s[np.isnan(self.sigma_s)] = 1.5
 
     def add_uncertainties(self, uncertainties=None):
         if uncertainties is None:

@@ -145,7 +145,7 @@ if __name__ == "__main__":
 
         # Just ships
         selection = (quality >= 4) & (iquam.platform_type.values == 1)
-        grid = grid_selection(iquam, selection)
+        grid = grid_selection(iquam, selection, climatology, sampling_unc)
         for key, entry in regions.items():
             gmsst, gmsst_unc = grid.calculate_area_average_with_covariance(
                 areas=areas, lat_range=entry["lat_range"], lon_range=entry["lon_range"]
@@ -158,7 +158,7 @@ if __name__ == "__main__":
 
         # Just drifters
         selection = (quality >= 4) & (iquam.platform_type.values == 2)
-        grid = grid_selection(iquam, selection)
+        grid = grid_selection(iquam, selection, climatology, sampling_unc)
         for key, entry in regions.items():
             gmsst, gmsst_unc = grid.calculate_area_average_with_covariance(
                 areas=areas, lat_range=entry["lat_range"], lon_range=entry["lon_range"]
@@ -171,7 +171,7 @@ if __name__ == "__main__":
 
         # Just Argo
         selection = (quality >= 4) & (iquam.platform_type.values == 5)
-        grid = grid_selection(iquam, selection)
+        grid = grid_selection(iquam, selection, climatology, sampling_unc)
         for key, entry in regions.items():
             gmsst, gmsst_unc = grid.calculate_area_average_with_covariance(
                 areas=areas, lat_range=entry["lat_range"], lon_range=entry["lon_range"]

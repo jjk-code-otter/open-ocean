@@ -110,6 +110,7 @@ def estimate_sampling_uncertainty(
 
             grid.do_one_step_5x5_sampler_gridding(n_samples=n_samples, rng=rng)
 
+            # These two can be used to calculate a running standard deviation
             s2[n_samples - 1, :, :] = s2[n_samples - 1, :, :] + (grid.data5[0, :, :] - full_average[0, :, :]) ** 2
             s1[n_samples - 1, :, :] = s1[n_samples - 1, :, :] + (grid.data5[0, :, :] - full_average[0, :, :])
 

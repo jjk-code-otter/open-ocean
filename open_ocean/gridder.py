@@ -60,7 +60,7 @@ class Grid:
         # Fill the uncertainties
         self.sigma_m = np.zeros(len(self.lat))
         self.sigma_b = np.zeros(len(self.lat))
-        self.sigma_s = np.zeros(len(self.lat))
+        self.sigma_s = None
         self.add_uncertainties()
 
         # Initialise some attributes that will be filled later by the gridding methods
@@ -78,13 +78,13 @@ class Grid:
 
         self.data5 = None
         self.numobs5 = None
+        self.numsobs5 = None
         self.unc5 = None
 
         self.covariance = None
 
     def add_sampling_uncertainties(self, sampling_unc):
-        month_array = sampling_unc.sst.values[self.month - 1, :, :]
-        self.sigma_s = month_array[self.yindex5, self.xindex5]
+        self.sigma_s = sampling_unc.sst.values[self.month - 1, :, :]
         self.sigma_s[np.isnan(self.sigma_s)] = 1.5
 
     def add_uncertainties(self, uncertainties=None):
@@ -203,10 +203,12 @@ class Grid:
         # Make a grid and copy the grid cell averages into the grid
         self.data5 = np.full((1, 36, 72), np.nan)
         self.numobs5 = np.zeros((1, 36, 72))
+        self.numsobs5 = np.zeros((1, 36, 72))
         self.unc5 = np.full((1, 36, 72), np.nan)
 
         self.data5[0, y5, x5] = second_mean[:]
         self.numobs5[0, y5, x5] = nobs[:]
+        self.numsobs5[0, y5, x5] = snobs[:]
 
     def do_one_step_5x5_gridding(self):
         # Pack the data into a DataFrame so that we can use Pandas aggregation magic
@@ -243,10 +245,12 @@ class Grid:
         # Make a grid and copy the grid cell averages into the grid
         self.data5 = np.full((1, 36, 72), np.nan)
         self.numobs5 = np.zeros((1, 36, 72))
+        self.numsobs5 = np.zeros((1, 36, 72))
         self.unc5 = np.full((1, 36, 72), np.nan)
 
         self.data5[0, y, x] = means[:]
         self.numobs5[0, y, x] = nobs[:]
+        self.numsobs5[0, y, x] = nobs[:]
 
     def do_one_step_5x5_sampler_gridding(self, n_samples=1, rng=np.random.default_rng()):
         # Pack the data into a DataFrame so that we can use Pandas aggregation magic
@@ -288,12 +292,14 @@ class Grid:
         # Make a grid and copy the grid cell averages into the grid
         self.data5 = np.full((1, 36, 72), np.nan)
         self.numobs5 = np.zeros((1, 36, 72))
+        self.numsobs5 = np.zeros((1, 36, 72))
         self.unc5 = np.full((1, 36, 72), np.nan)
 
         nobs[nobs > n_samples] = n_samples
 
         self.data5[0, y, x] = means[:]
         self.numobs5[0, y, x] = nobs[:]
+        self.numsobs5[0, y, x] = nobs[:]
 
     def calculate_covariance(self):
         if self.weights5 is None:
@@ -308,7 +314,6 @@ class Grid:
                 'id': self.id,
                 'sigma_m': self.sigma_m,
                 'sigma_b': self.sigma_b,
-                'sigma_s': self.sigma_s,
             }
         )
 
@@ -323,7 +328,6 @@ class Grid:
                 'weight5': 'sum',
                 'sigma_m': 'first',
                 'sigma_b': 'first',
-                'sigma_s': 'first',
             }
         )
 
@@ -335,7 +339,6 @@ class Grid:
         for thisid, group in groups2:
             # Calculate the bits that we need to make the covariance
             weight_sigma_m_sq = np.power(group['weight5'].values * group['sigma_m'].values, 2)
-            weight_sigma_s_sq = np.power(group['weight5'].values * group['sigma_s'].values, 2)
             weight_sigma_b = group['weight5'].values * group['sigma_b'].values
 
             # The error covariance matrix for this ship is the outer product of the weight time sigma_b
@@ -343,11 +346,17 @@ class Grid:
             # On the diagonal we need to add the uncorrelated part of the uncertainty.
             n = len(weight_sigma_b)
             matrix[np.diag_indices(n)] = matrix[np.diag_indices(n)] + weight_sigma_m_sq
-            matrix[np.diag_indices(n)] = matrix[np.diag_indices(n)] + weight_sigma_s_sq
 
             # Use the indices to locate this ID's contribution to the overall covariance matrix and add it on.
             selection = np.ix_(group['xy5'].values, group['xy5'].values)
             self.covariance[selection] = self.covariance[selection] + matrix[:, :]
+
+        # Sampling uncertainty
+        flat_numsobs = self.numsobs5.flatten()
+        flat_numsobs[flat_numsobs != 0] = 1.0/flat_numsobs[flat_numsobs != 0]
+        sampling_unc = (self.sigma_s.flatten()**2) * flat_numsobs
+        # Add sampling uncertainty to the diagonal
+        self.covariance[np.diag_indices(2592)] = self.covariance[np.diag_indices(2592)] + sampling_unc
 
         # Extract the diagonal of the covariance matrix and populate the uncertainty grid
         self.unc5[:, :, :] = np.sqrt((self.covariance[np.diag_indices(2592)]).reshape((1, 36, 72)))

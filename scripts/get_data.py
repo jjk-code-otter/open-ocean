@@ -24,8 +24,15 @@ import requests
 
 def get_iquam_year_month(year, month):
 
-    url = (f"https://star.nesdis.noaa.gov/pub/socd/sst/iquam/v2.10/"
-           f"{year}{month:02d}-STAR-L2i_GHRSST-SST-iQuam-V2.10-v01.0-fv01.0.nc")
+    if year <= 2016:
+        url = (f"https://star.nesdis.noaa.gov/pub/socd/sst/iquam/v2.10/"
+               f"{year}{month:02d}-STAR-L2i_GHRSST-SST-iQuam-V2.10-v01.0-fv01.0.nc")
+    else:
+        with open('iquam_files.txt', 'r') as f:
+            for line in f:
+                if f"{year}{month:02d}" in line:
+                    line = line.rstrip()
+                    url = (f"https://star.nesdis.noaa.gov/pub/socd/sst/iquam/v2.10/{line}")
 
     data_dir = Path(os.getenv("OODIR"))
     out_path = data_dir / 'IQUAM' / f'{year}{month:02d}-STAR-L2i_GHRSST-SST-iQuam-V2.10-v01.0-fv01.0.nc'

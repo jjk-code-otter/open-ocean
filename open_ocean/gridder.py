@@ -242,6 +242,54 @@ class Grid:
         self.data5[0, y, x] = means[:]
         self.numobs5[0, y, x] = nobs[:]
 
+    def do_one_step_5x5_sampler_gridding(self, n_samples=1, rng=np.random.default_rng()):
+        # Pack the data into a DataFrame so that we can use Pandas aggregation magic
+        df = pd.DataFrame(
+            {
+                'xy5': self.xy5,
+                'x': self.xindex5,
+                'y': self.yindex5,
+                'value': self.anomalies,
+                'id': self.id,
+                'sigma_m': self.sigma_m,
+                'sigma_b': self.sigma_b,
+            }
+        )
+
+        def subsample_mean(inarr):
+            if n_samples > len(inarr):
+                return np.nan
+            return np.mean(rng.choice(inarr, size=n_samples, replace=False))
+
+        # Calculate the mean, number of observations and the indices of each grid cell with data in it.
+        grouped = df.groupby("xy5")
+        means = grouped["value"].agg(subsample_mean).values
+        nobs = grouped["x"].count().values
+        x = grouped["x"].first().values
+        y = grouped["y"].first().values
+        xy5_unique = grouped["xy5"].first().values
+
+        # Merge the weights back into the original dataframe
+        df_match = pd.DataFrame(
+            {
+                "xy5": xy5_unique,
+                "weight": 1 / nobs,
+            }
+        )
+        df = pd.merge(df, df_match, on="xy5", how="left")
+        self.weights5 = df.weight.values
+
+        # Make a grid and copy the grid cell averages into the grid
+        self.data5 = np.full((1, 36, 72), np.nan)
+        self.numobs5 = np.zeros((1, 36, 72))
+        self.unc5 = np.full((1, 36, 72), np.nan)
+
+        nobs[nobs > n_samples] = n_samples
+
+        self.data5[0, y, x] = means[:]
+        self.numobs5[0, y, x] = nobs[:]
+
+
     def calculate_covariance(self):
         if self.weights5 is None:
             raise RuntimeError("No gridding weights. Grid first")
@@ -508,7 +556,14 @@ class Grid:
         ds = Grid.make_xarray(self.data5, res=5)
         Grid.plot_generic_map(ds, np.arange(-3, 3, 0.2), filename=filename)
 
-    def plot_map_unc_5x5(self, filename=None):
+    def plot_map_numobs_5x5(self, filename=None):
+        """Plot the 5x5 grid as a map"""
+        ds = Grid.make_xarray(self.numobs5, res=5)
+        Grid.plot_generic_map(ds, [0, 1, 2, 3, 4, 5, 10, 100], filename=filename)
+
+    def plot_map_unc_5x5(self, filename=None, levels=None):
         """Plot a map of the uncertainties at 5x5 resolution"""
+        if levels is None:
+            levels = np.arange(0, 1.5, 0.1)
         ds = Grid.make_xarray(self.unc5, res=5)
-        Grid.plot_generic_map(ds, np.arange(0, 1.5, 0.1), filename=filename)
+        Grid.plot_generic_map(ds, levels, filename=filename)

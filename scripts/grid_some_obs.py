@@ -101,7 +101,7 @@ if __name__ == "__main__":
 
     count = -1
 
-    for year, month in product(range(1981, 2017), range(1, 13)):
+    for year, month in product(range(1981, 2026), range(1, 13)):
         file = data_dir / 'IQUAM' / f'{year}{month:02d}-STAR-L2i_GHRSST-SST-iQuam-V2.10-v01.0-fv01.0.nc'
 
         if not (file.exists()):
@@ -205,7 +205,7 @@ if __name__ == "__main__":
         label="Argo", color="green", alpha=0.5
     )
 
-    plt.xlim(1980, 2018)
+    plt.xlim(1980, 2027)
     plt.ylim(-0.5,0.85)
 
     plt.legend()

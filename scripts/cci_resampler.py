@@ -85,7 +85,7 @@ def estimate_sampling_uncertainty(
         all_dates,
         all_ssts,
         climatology,
-        n_iterations=100,
+        n_iterations=500,
         n_obs_max=10
 
 ):
@@ -98,6 +98,7 @@ def estimate_sampling_uncertainty(
     s2 = np.zeros((n_obs_max, 36, 72))
     s1 = np.zeros((n_obs_max, 36, 72))
     sigma = np.zeros((n_obs_max, 36, 72))
+    mse = np.zeros((n_obs_max, 36, 72))
 
     # Calculate the full grid average from all observations. Can take a while
     grid.do_two_step_5x5_gridding()
@@ -116,14 +117,19 @@ def estimate_sampling_uncertainty(
             n_iterations * s2[n_samples - 1, :, :] - s1[n_samples - 1, :, :] ** 2
         ) / n_iterations
 
-        if n_samples == 1:
-            grid.unc5[0, :, :] = sigma[n_samples - 1, :, :]
-            grid.plot_map_unc_5x5(levels=np.arange(0, 2.5, 0.1))
+        mse[n_samples - 1, :, :] = np.sqrt(s2[n_samples - 1, :, :]/n_iterations)
 
-    return sigma
+        # if n_samples == 1:
+        #     grid.unc5[0, :, :] = sigma[n_samples - 1, :, :]
+        #     grid.plot_map_unc_5x5(levels=np.arange(0, 2.5, 0.1))
+        #
+        #     grid.unc5[0, :, :] = mse[n_samples - 1, :, :]
+        #     grid.plot_map_unc_5x5(levels=np.arange(0, 2.5, 0.1))
+
+    return sigma, mse
 
 
-def process_month(year, month, rng, climatology):
+def process_month(year, month, rng, climatology, sample_denominator=100, n_iterations=100):
     all_ssts = np.zeros((0))
     all_lats = np.zeros((0))
     all_lons = np.zeros((0))
@@ -136,7 +142,7 @@ def process_month(year, month, rng, climatology):
 
         out_path = get_file(year, month, day)
         latitude, longitude, sst, date = read_samples_from_file(
-            year,month, day, out_path, rng, sample_denominator=1000
+            year,month, day, out_path, rng, sample_denominator=sample_denominator
         )
 
         all_ssts = np.concatenate((all_ssts, sst))
@@ -153,7 +159,8 @@ def process_month(year, month, rng, climatology):
         all_dates,
         all_ssts,
         climatology,
-        n_obs_max=1
+        n_obs_max=1,
+        n_iterations=n_iterations,
     )
 
     return sigma
@@ -164,10 +171,15 @@ if __name__ == '__main__':
     rng = np.random.default_rng(seed=26237)
 
     all_sigma = np.zeros((12, 36, 72))
+    all_mse = np.zeros((12, 36, 72))
 
     for month in range(1, 13):
-        sigma = process_month(year, month, rng, climatology)
+        sigma, mse = process_month(year, month, rng, climatology, n_iterations=500, sample_denominator=100)
         all_sigma[month-1, :, :] = sigma[0, :, :]
+        all_mse[month-1, :, :] = mse[0, :, :]
 
     grid = gridder.Grid.make_xarray(all_sigma, res=5, times=pd.date_range(start=f'1991-01-01', freq='1MS', periods=12))
-    grid.to_netcdf(DATA_DIR / 'IQUAM' / 'OutputData' / 'sampling_uncertainty.nc')
+    grid.to_netcdf(DATA_DIR / 'IQUAM' / 'OutputData' / f'sampling_uncertainty_{year}.nc')
+
+    grid = gridder.Grid.make_xarray(all_mse, res=5, times=pd.date_range(start=f'1991-01-01', freq='1MS', periods=12))
+    grid.to_netcdf(DATA_DIR / 'IQUAM' / 'OutputData' / f'mean_squared_error_{year}.nc')

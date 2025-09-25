@@ -29,7 +29,7 @@ def convert_dates(months, days):
     return [datetime(2020, months[i], days[i]) for i in range(len(months))]
 
 
-def grid_selection(iquam, selection):
+def grid_selection(iquam, selection, climatology, sampling_unc):
     id = iquam.platform_id.values[selection]
     type = iquam.platform_type.values[selection]
     lats = iquam.lat.values[selection]
@@ -44,6 +44,7 @@ def grid_selection(iquam, selection):
 
     # Grid up the data
     grid = gridder.Grid(2020, 10, id, lats, lons, dates, values, type, climatology)
+    grid.add_sampling_uncertainties(sampling_unc)
     grid.do_1x1_gridding()
     grid.do_one_step_5x5_gridding()
     grid.calculate_covariance()
@@ -74,6 +75,7 @@ if __name__ == "__main__":
 
     climatology = xr.open_dataset(data_dir / "SST_CCI_climatology" / "SST_1x1_daily.nc")
     areas = convert_climatology_to_ocean_areas(climatology)
+    sampling_unc = xr.open_dataset(data_dir / "IQUAM" / "OutputData" / "sampling_uncertainty.nc")
 
     n_time = (2025 - 1981 + 1) * 12
 
@@ -117,7 +119,7 @@ if __name__ == "__main__":
 
         row = []
 
-        grid = grid_selection(iquam, selection)
+        grid = grid_selection(iquam, selection, climatology, sampling_unc)
         for key, entry in regions.items():
             gmsst, gmsst_unc = grid.calculate_area_average_with_covariance(
                 areas=areas, lat_range=entry["lat_range"], lon_range=entry["lon_range"]

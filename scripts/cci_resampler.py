@@ -166,20 +166,22 @@ def process_month(year, month, rng, climatology, sample_denominator=100, n_itera
     return sigma
 
 if __name__ == '__main__':
-    year = 2005
+
     climatology = xr.open_dataset(DATA_DIR / "SST_CCI_climatology" / "SST_1x1_daily.nc")
     rng = np.random.default_rng(seed=26237)
 
-    all_sigma = np.zeros((12, 36, 72))
-    all_mse = np.zeros((12, 36, 72))
+    for year in [2005, 2021]:
 
-    for month in range(1, 13):
-        sigma, mse = process_month(year, month, rng, climatology, n_iterations=500, sample_denominator=100)
-        all_sigma[month-1, :, :] = sigma[0, :, :]
-        all_mse[month-1, :, :] = mse[0, :, :]
+        all_sigma = np.zeros((12, 36, 72))
+        all_mse = np.zeros((12, 36, 72))
 
-    grid = gridder.Grid.make_xarray(all_sigma, res=5, times=pd.date_range(start=f'1991-01-01', freq='1MS', periods=12))
-    grid.to_netcdf(DATA_DIR / 'IQUAM' / 'OutputData' / f'sampling_uncertainty_{year}.nc')
+        for month in range(1, 13):
+            sigma, mse = process_month(year, month, rng, climatology, n_iterations=500, sample_denominator=100)
+            all_sigma[month-1, :, :] = sigma[0, :, :]
+            all_mse[month-1, :, :] = mse[0, :, :]
 
-    grid = gridder.Grid.make_xarray(all_mse, res=5, times=pd.date_range(start=f'1991-01-01', freq='1MS', periods=12))
-    grid.to_netcdf(DATA_DIR / 'IQUAM' / 'OutputData' / f'mean_squared_error_{year}.nc')
+        grid = gridder.Grid.make_xarray(all_sigma, res=5, times=pd.date_range(start=f'1991-01-01', freq='1MS', periods=12))
+        grid.to_netcdf(DATA_DIR / 'IQUAM' / 'OutputData' / f'sampling_uncertainty_{year}.nc')
+
+        grid = gridder.Grid.make_xarray(all_mse, res=5, times=pd.date_range(start=f'1991-01-01', freq='1MS', periods=12))
+        grid.to_netcdf(DATA_DIR / 'IQUAM' / 'OutputData' / f'mean_squared_error_{year}.nc')

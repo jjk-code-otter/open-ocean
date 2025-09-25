@@ -60,6 +60,7 @@ class Grid:
         # Fill the uncertainties
         self.sigma_m = np.zeros(len(self.lat))
         self.sigma_b = np.zeros(len(self.lat))
+        self.sigma_s = np.zeros(len(self.lat))
         self.add_uncertainties()
 
         # Initialise some attributes that will be filled later by the gridding methods
@@ -80,6 +81,10 @@ class Grid:
         self.unc5 = None
 
         self.covariance = None
+
+    def add_sampling_uncertainties(self, sampling_unc):
+        month_array = sampling_unc.sst.values[self.month - 1, :, :]
+        self.sigma_s = month_array[self.yindex5, self.xindex5]
 
     def add_uncertainties(self, uncertainties=None):
         if uncertainties is None:
@@ -289,10 +294,9 @@ class Grid:
         self.data5[0, y, x] = means[:]
         self.numobs5[0, y, x] = nobs[:]
 
-
     def calculate_covariance(self):
         if self.weights5 is None:
-            raise RuntimeError("No gridding weights. Grid first")
+            raise RuntimeError("No gridding weights. Please run a gridder first")
 
         df = pd.DataFrame(
             {
@@ -303,6 +307,7 @@ class Grid:
                 'id': self.id,
                 'sigma_m': self.sigma_m,
                 'sigma_b': self.sigma_b,
+                'sigma_s': self.sigma_s,
             }
         )
 
@@ -317,6 +322,7 @@ class Grid:
                 'weight5': 'sum',
                 'sigma_m': 'first',
                 'sigma_b': 'first',
+                'sigma_s': 'first',
             }
         )
 
@@ -328,6 +334,7 @@ class Grid:
         for thisid, group in groups2:
             # Calculate the bits that we need to make the covariance
             weight_sigma_m_sq = np.power(group['weight5'].values * group['sigma_m'].values, 2)
+            weight_sigma_s_sq = np.power(group['weight5'].values * group['sigma_s'].values, 2)
             weight_sigma_b = group['weight5'].values * group['sigma_b'].values
 
             # The error covariance matrix for this ship is the outer product of the weight time sigma_b
@@ -335,6 +342,7 @@ class Grid:
             # On the diagonal we need to add the uncorrelated part of the uncertainty.
             n = len(weight_sigma_b)
             matrix[np.diag_indices(n)] = matrix[np.diag_indices(n)] + weight_sigma_m_sq
+            matrix[np.diag_indices(n)] = matrix[np.diag_indices(n)] + weight_sigma_s_sq
 
             # Use the indices to locate this ID's contribution to the overall covariance matrix and add it on.
             selection = np.ix_(group['xy5'].values, group['xy5'].values)

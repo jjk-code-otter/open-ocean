@@ -122,7 +122,3 @@ class GPInterpolator:
         out_grid.unc5[0, :, :] = np.reshape(p[np.diag_indices(2592)], (36,72))
 
         return out_grid
-
-
-if __name__ == "__main__":
-    pass

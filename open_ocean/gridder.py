@@ -574,7 +574,7 @@ class Grid:
             transform=proj,
             subplot_kws={'projection': proj},
             levels=levels,
-            cmap='BuRd_r'
+            cmap=cmap
         )
         p.axes.coastlines()
         plt.title("")
@@ -593,7 +593,7 @@ class Grid:
     def plot_map_5x5(self, filename=None):
         """Plot the 5x5 grid as a map"""
         ds = Grid.make_xarray(self.data5, res=5)
-        Grid.plot_generic_map(ds, np.arange(-3, 3, 0.2), filename=filename, cmap='BuRd_r')
+        Grid.plot_generic_map(ds, np.arange(-3, 3, 0.2), filename=filename, cmap='RdBu_r')
 
     def plot_map_numobs_5x5(self, filename=None):
         """Plot the 5x5 grid as a map"""

@@ -145,7 +145,6 @@ if __name__ == "__main__":
         # difference.plot_map_5x5()
 
         # Calculate the area average for the grid
-
         ts.append(gmsst)
         ts_unc.append(gmsst_unc)
         time.append(year + (month - 1) / 12.)

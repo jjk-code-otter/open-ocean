@@ -14,6 +14,7 @@
 #   You should have received a copy of the GNU General Public License
 #   along with this program.  If not, see <https://www.gnu.org/licenses/>.
 from open_ocean import gridder
+from open_ocean import interpolation as io
 from itertools import product
 import json
 import xarray as xr
@@ -82,6 +83,7 @@ if __name__ == "__main__":
     all_data = np.zeros((n_time, 36, 72)) + np.nan
     all_nobs = np.zeros((n_time, 36, 72))
     all_unc = np.zeros((n_time, 36, 72)) + np.nan
+    all_interpolate = np.zeros((n_time, 36, 72)) + np.nan
 
     ship_data = np.zeros((n_time, 36, 72)) + np.nan
     ship_nobs = np.zeros((n_time, 36, 72))
@@ -113,7 +115,8 @@ if __name__ == "__main__":
 
         # Select only high quality observations
         quality = iquam.quality_level.values
-        selection = quality >= 4
+        pt = iquam.platform_type.values
+        selection = (quality >= 4)
 
         count += 1
 
@@ -128,14 +131,26 @@ if __name__ == "__main__":
             row.append(gmsst_unc)
             print(f"{key} {year} {month:02d}: {gmsst:.3f} ± {gmsst_unc:.3f}")
 
+        kernel = io.Kernel(0.6, 1300.0,1.5)
+        interp = io.GPInterpolator(grid, kernel)
+        interp.make_covariance(constant=0.2)
+        interpolated_grid = interp.do_interpolation()
+        interpolated_grid.data5[np.isnan(sampling_unc.sst.values[0:1,:,:])] = np.nan
+
         all_data[count, :, :] = grid.data5[0, :, :]
+        all_interpolate[count, :, :] = interpolated_grid.data5[0, :, :]
         all_nobs[count, :, :] = grid.numobs5[0, :, :]
         all_unc[count, :, :] = grid.unc5[0, :, :]
 
         # Plot some progress plots
         grid.plot_map_1x1(filename=data_dir / "IQUAM" / "Figures" / f"one_deg_{year}{month:02d}.png")
         grid.plot_map_5x5(filename=data_dir / "IQUAM" / "Figures" / f"five_deg_{year}{month:02d}.png")
+        interpolated_grid.plot_map_5x5(filename=data_dir / "IQUAM" / "Figures" / f"five_deg_interp_{year}{month:02d}.png")
         grid.plot_map_unc_5x5(filename=data_dir / "IQUAM" / "Figures" / f"unc_{year}{month:02d}.png")
+        interpolated_grid.plot_map_unc_5x5(filename=data_dir / "IQUAM" / "Figures" / f"unc_interp_{year}{month:02d}.png")
+
+        # difference = grid - interpolated_grid
+        # difference.plot_map_5x5()
 
         # Calculate the area average for the grid
 
@@ -217,6 +232,7 @@ if __name__ == "__main__":
 
     # Transfer the data to xarray DataArrays and write out
     all_data = all_data[0:count + 1, :, :]
+    all_interpolate = all_interpolate[0:count + 1, :, :]
     all_unc = all_unc[0:count + 1, :, :]
     all_nobs = all_nobs[0:count + 1, :, :]
 
@@ -235,10 +251,12 @@ if __name__ == "__main__":
     date_range = pd.date_range(start=f'1981-09-01', freq='1MS', periods=count + 1)
 
     oo_anomalies = gridder.Grid.make_xarray(all_data, res=5, times=date_range)
+    oo_interpolated = gridder.Grid.make_xarray(all_interpolate, res=5, times=date_range)
     oo_uncertainty = gridder.Grid.make_xarray(all_unc, res=5, times=date_range)
     oo_numobs = gridder.Grid.make_xarray(all_nobs, res=5, times=date_range)
 
     oo_anomalies.to_netcdf(data_dir / "IQUAM" / "oo_anomalies.nc")
+    oo_interpolated.to_netcdf(data_dir / "IQUAM" / "oo_interpolated.nc")
     oo_uncertainty.to_netcdf(data_dir / "IQUAM" / "oo_uncertainty.nc")
     oo_numobs.to_netcdf(data_dir / "IQUAM" / "oo_numobs.nc")
 

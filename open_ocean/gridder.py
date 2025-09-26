@@ -41,7 +41,7 @@ class Grid:
         self.anomalies = self.calculate_anomalies(climatology)
 
         # Eliminate any nans in the anomalies that arise from climatology coverage
-        non_missing = ~np.isnan(self.anomalies)
+        non_missing = ~(np.isnan(self.anomalies) | (self.anomalies > 8) | (self.anomalies < -8) )
 
         self.x_index = self.x_index[non_missing]
         self.y_index = self.y_index[non_missing]
@@ -83,9 +83,17 @@ class Grid:
 
         self.covariance = None
 
-    def add_sampling_uncertainties(self, sampling_unc):
-        self.sigma_s = sampling_unc.sst.values[self.month - 1, :, :]
-        self.sigma_s[np.isnan(self.sigma_s)] = 1.5
+    def __sub__(self, other):
+        outgrid = copy.deepcopy(self)
+        outgrid.data5 = self.data5 - other.data5
+        return outgrid
+
+    def add_sampling_uncertainties(self, sampling_unc=None):
+        if sampling_unc is None:
+            self.sigma_s = np.zeros((36,72))
+        else:
+            self.sigma_s = sampling_unc.sst.values[self.month - 1, :, :]
+            self.sigma_s[np.isnan(self.sigma_s)] = 1.5
 
     def add_uncertainties(self, uncertainties=None):
         if uncertainties is None:
@@ -493,6 +501,18 @@ class Grid:
         weights = np.cos(np.deg2rad(ds.latitude))
         weighted_mean = ds.weighted(weights).mean(("longitude", "latitude"))
         return weighted_mean.sst.values[0]
+
+    def get_latitudes(self):
+        lat = np.linspace(-87.5, 87.5, 36)
+        lat = lat.reshape(1, 36, 1)
+        lat = np.repeat(lat, 72, axis=2)
+        return lat
+
+    def get_longitudes(self):
+        lon = np.linspace(-177.5, 177.5, 72)
+        lon = lon.reshape(1, 1, 72)
+        lon = np.repeat(lon, 36, axis=1)
+        return lon
 
     @staticmethod
     def make_xarray(data_array, res=5, times=None):

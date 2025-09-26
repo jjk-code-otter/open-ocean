@@ -49,6 +49,7 @@ class GPInterpolator:
         self.kernel = kernel
         self.grid = grid
         self.cov = None
+        self.posterior = None
 
     @staticmethod
     def convert_lat_lon_to_euclidean(lat, lon):
@@ -112,6 +113,7 @@ class GPInterpolator:
         p = np.matmul(inv_part, cht.transpose())
         p = np.matmul(cht, p)
         p = self.cov - p
+        self.posterior = p
 
         out_grid = copy.deepcopy(self.grid)
         out_grid.data5[0, :, :] = np.reshape(mu, (36, 72))

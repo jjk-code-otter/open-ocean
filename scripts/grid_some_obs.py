@@ -32,7 +32,7 @@ def convert_dates(months, days):
     return [datetime(2020, months[i], days[i]) for i in range(len(months))]
 
 
-def grid_selection(iquam, selection, climatology, sampling_unc):
+def grid_selection(iquam, selection, climatology, sampling_unc, constant=None):
     id = iquam.platform_id.values[selection]
     type = iquam.platform_type.values[selection]
     lats = iquam.lat.values[selection]
@@ -50,7 +50,7 @@ def grid_selection(iquam, selection, climatology, sampling_unc):
     grid.add_sampling_uncertainties(sampling_unc)
     grid.do_1x1_gridding()
     grid.do_one_step_5x5_gridding()
-    grid.calculate_covariance()
+    grid.calculate_covariance(constant=constant)
 
     return grid
 
@@ -89,8 +89,17 @@ if __name__ == "__main__":
     argo_nobs = np.zeros((n_time, 36, 72))
     argo_unc = np.zeros((n_time, 36, 72)) + np.nan
 
+    interp_data = np.zeros((n_time, 36, 72)) + np.nan
+    interp_unc = np.zeros((n_time, 36, 72)) + np.nan
+
     region_names = [key for key in regions.keys()]
-    component_names = ["all", "all_unc", "ship", "ship_unc", "drifter", "drifter_unc", "argo", "argo_unc"]
+    component_names = [
+        "all", "all_unc",
+        "ship", "ship_unc",
+        "drifter", "drifter_unc",
+        "argo", "argo_unc",
+        "interp", "interp_unc"
+    ]
 
     mux = pd.MultiIndex.from_product([component_names, region_names])
     time_series = pd.DataFrame(columns=mux)
@@ -123,11 +132,11 @@ if __name__ == "__main__":
             row.append(gmsst_unc)
             print(f"{key} {year} {month:02d}: {gmsst:.3f} ± {gmsst_unc:.3f}")
 
-        kernel = io.Kernel(0.6, 1300.0,1.5)
+        kernel = io.Kernel(0.6, 1300.0, 1.5)
         interp = io.GPInterpolator(grid, kernel)
         interp.make_covariance(constant=0.2)
         interpolated_grid = interp.do_interpolation()
-        interpolated_grid.data5[np.isnan(sampling_unc.sst.values[0:1,:,:])] = np.nan
+        interpolated_grid.data5[np.isnan(sampling_unc.sst.values[0:1, :, :])] = np.nan
 
         all_data[count, :, :] = grid.data5[0, :, :]
         all_interpolate[count, :, :] = interpolated_grid.data5[0, :, :]
@@ -137,9 +146,11 @@ if __name__ == "__main__":
         # Plot some progress plots
         grid.plot_map_1x1(filename=data_dir / "IQUAM" / "Figures" / f"one_deg_{year}{month:02d}.png")
         grid.plot_map_5x5(filename=data_dir / "IQUAM" / "Figures" / f"five_deg_{year}{month:02d}.png")
-        interpolated_grid.plot_map_5x5(filename=data_dir / "IQUAM" / "Figures" / f"five_deg_interp_{year}{month:02d}.png")
+        interpolated_grid.plot_map_5x5(
+            filename=data_dir / "IQUAM" / "Figures" / f"five_deg_interp_{year}{month:02d}.png")
         grid.plot_map_unc_5x5(filename=data_dir / "IQUAM" / "Figures" / f"unc_{year}{month:02d}.png")
-        interpolated_grid.plot_map_unc_5x5(filename=data_dir / "IQUAM" / "Figures" / f"unc_interp_{year}{month:02d}.png")
+        interpolated_grid.plot_map_unc_5x5(
+            filename=data_dir / "IQUAM" / "Figures" / f"unc_interp_{year}{month:02d}.png")
 
         # difference = grid - interpolated_grid
         # difference.plot_map_5x5()
@@ -151,7 +162,7 @@ if __name__ == "__main__":
 
         # Just ships
         selection = (quality >= 4) & (iquam.platform_type.values == 1)
-        grid = grid_selection(iquam, selection, climatology, sampling_unc)
+        grid = grid_selection(iquam, selection, climatology, sampling_unc, constant=0.2)
         for key, entry in regions.items():
             gmsst, gmsst_unc = grid.calculate_area_average_with_covariance(
                 areas=areas, lat_range=entry["lat_range"], lon_range=entry["lon_range"]
@@ -161,6 +172,8 @@ if __name__ == "__main__":
         ship_data[count, :, :] = grid.data5[0, :, :]
         ship_nobs[count, :, :] = grid.numobs5[0, :, :]
         ship_unc[count, :, :] = grid.unc5[0, :, :]
+
+        ship_grid = grid
 
         # Just drifters
         selection = (quality >= 4) & (iquam.platform_type.values == 2)
@@ -175,6 +188,8 @@ if __name__ == "__main__":
         drifter_nobs[count, :, :] = grid.numobs5[0, :, :]
         drifter_unc[count, :, :] = grid.unc5[0, :, :]
 
+        drifter_grid = grid
+
         # Just Argo
         selection = (quality >= 4) & (iquam.platform_type.values == 5)
         grid = grid_selection(iquam, selection, climatology, sampling_unc)
@@ -188,8 +203,38 @@ if __name__ == "__main__":
         argo_nobs[count, :, :] = grid.numobs5[0, :, :]
         argo_unc[count, :, :] = grid.unc5[0, :, :]
 
-        time_series.loc[count] = row
 
+        # Do some interpolation stuff here
+        kernel = io.Kernel(0.6, 1300.0, 1.5)
+        interp1 = io.GPInterpolator(drifter_grid, kernel)
+        interp1.make_covariance(constant=0.2)
+        interpolated_grid1 = interp1.do_interpolation()
+        interpolated_grid1.data5[np.isnan(sampling_unc.sst.values[0:1, :, :])] = np.nan
+
+        ship_grid = ship_grid - interpolated_grid1
+
+        kernel = io.Kernel(0.6, 1300.0, 1.5)
+        interp2 = io.GPInterpolator(ship_grid, kernel)
+        interp2.add_covariance(interp1.posterior)
+        interpolated_grid2 = interp2.do_interpolation()
+        interpolated_grid2.data5[np.isnan(sampling_unc.sst.values[0:1, :, :])] = np.nan
+
+        interpolated_grid2 = interpolated_grid2 + interpolated_grid1
+
+        interpolated_grid2.plot_map_5x5(filename=data_dir / "IQUAM" / "Figures" / f"five_deg_interp_adjust_{year}{month:02d}.png")
+        # interpolated_grid1.plot_map_5x5()
+        # interpolated_grid2.plot_map_5x5()
+
+        for key, entry in regions.items():
+            gmsst, gmsst_unc = interpolated_grid2.calculate_area_average_with_covariance(
+                areas=areas, lat_range=entry["lat_range"], lon_range=entry["lon_range"]
+            )
+            row.append(gmsst)
+            row.append(gmsst_unc)
+        interp_data[count, :, :] = interpolated_grid2.data5[0, :, :]
+        interp_unc[count, :, :] = interpolated_grid2.unc5[0, :, :]
+
+        time_series.loc[count] = row
         time_series.to_csv(data_dir / "IQUAM" / "OutputData" / "timeseries_with_uncertainty.csv")
 
     avships = time_series['ship']
@@ -213,8 +258,15 @@ if __name__ == "__main__":
         label="Argo", color="green", alpha=0.5
     )
 
+    avinterp = time_series['interp']
+    avinterp_unc = time_series['interp_unc']
+    plt.fill_between(
+        time, avinterp['Global'] + 2 * avinterp_unc['Global'], avinterp['Global'] - 2 * avinterp_unc['Global'],
+        label="Interpolated", color="red", alpha=0.5
+    )
+
     plt.xlim(1980, 2027)
-    plt.ylim(-0.5,0.85)
+    plt.ylim(-0.5, 0.85)
 
     plt.legend()
     plt.savefig(data_dir / "IQUAM" / "Figures" / "timeseries_with_uncertainty.png")
@@ -238,6 +290,9 @@ if __name__ == "__main__":
     argo_data = argo_data[0:count + 1, :, :]
     argo_unc = argo_unc[0:count + 1, :, :]
     argo_nobs = argo_nobs[0:count + 1, :, :]
+
+    interp_data = interp_data[0:count + 1, :, :]
+    interp_unc = interp_unc[0:count + 1, :, :]
 
     date_range = pd.date_range(start=f'1981-09-01', freq='1MS', periods=count + 1)
 
@@ -274,3 +329,9 @@ if __name__ == "__main__":
     oo_anomalies.to_netcdf(data_dir / "IQUAM" / "oo_anomalies_argo.nc")
     oo_uncertainty.to_netcdf(data_dir / "IQUAM" / "oo_uncertainty_argo.nc")
     oo_numobs.to_netcdf(data_dir / "IQUAM" / "oo_numobs_argo.nc")
+
+    oo_anomalies = gridder.Grid.make_xarray(interp_data, res=5, times=date_range)
+    oo_uncertainty = gridder.Grid.make_xarray(interp_unc, res=5, times=date_range)
+
+    oo_anomalies.to_netcdf(data_dir / "IQUAM" / "oo_anomalies_interp_adjusted.nc")
+    oo_uncertainty.to_netcdf(data_dir / "IQUAM" / "oo_uncertainty_interp_adjusted.nc")

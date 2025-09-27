@@ -63,6 +63,9 @@ class GPInterpolator:
 
         return x, y, z
 
+    def add_covariance(self, input_covariance):
+        self.cov = input_covariance
+
     def make_covariance(self, constant=None):
         latitudes = self.grid.get_latitudes().flatten()
         longitudes = self.grid.get_longitudes().flatten()

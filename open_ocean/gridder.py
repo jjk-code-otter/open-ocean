@@ -88,6 +88,11 @@ class Grid:
         outgrid.data5 = self.data5 - other.data5
         return outgrid
 
+    def __add__(self, other):
+        outgrid = copy.deepcopy(self)
+        outgrid.data5 = self.data5 + other.data5
+        return outgrid
+
     def add_sampling_uncertainties(self, sampling_unc=None):
         if sampling_unc is None:
             self.sigma_s = np.zeros((36,72))
@@ -309,7 +314,7 @@ class Grid:
         self.numobs5[0, y, x] = nobs[:]
         self.numsobs5[0, y, x] = nobs[:]
 
-    def calculate_covariance(self):
+    def calculate_covariance(self, constant=None):
         if self.weights5 is None:
             raise RuntimeError("No gridding weights. Please run a gridder first")
 
@@ -342,6 +347,9 @@ class Grid:
         groups2 = aggregated_groups.groupby(['id'])
 
         self.covariance = np.zeros((2592, 2592))
+
+        if constant is not None:
+            self.covariance[:,:] = constant * constant
 
         # loop over the IDs and for each ID calculate the contribution to the covariance matrix and add it on.
         for thisid, group in groups2:
@@ -588,7 +596,7 @@ class Grid:
         """Plot the grid as a map"""
         ds = Grid.make_xarray(self.data, res=1)
         ds = ds.mean(dim='time')
-        Grid.plot_generic_map(ds, np.arange(-3, 3, 0.2), filename=filename)
+        Grid.plot_generic_map(ds, np.arange(-3, 3, 0.2), filename=filename, cmap='RdBu_r')
 
     def plot_map_5x5(self, filename=None):
         """Plot the 5x5 grid as a map"""

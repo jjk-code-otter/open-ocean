@@ -19,6 +19,7 @@ import os
 import numpy as np
 import xarray as xr
 import matplotlib.pyplot as plt
+import cartopy.crs as ccrs
 import open_ocean.vbpca as vbpa
 from open_ocean.utils import convert_climatology_to_ocean_areas
 
@@ -34,9 +35,9 @@ unc = xr.open_dataset(unc_file)
 climatology = xr.open_dataset(data_dir / "SST_CCI_climatology" / "SST_1x1_daily.nc")
 areas = convert_climatology_to_ocean_areas(climatology)
 
-n_iterations = 100
-n_eofs =  10
-mask_percentage = 0.333
+n_iterations = 5
+n_eofs =  3
+mask_percentage = 0.5
 
 interpolator = vbpa.VBPCA(
     data.sst.values,
@@ -53,10 +54,20 @@ pc_series = interpolator.make_pc_series()
 
 time = np.arange(data.sst.values.shape[0])/12. + 1981. + 8./12.
 
+recon.sst.values[:] = recon_data[:]
 
-plt.pcolormesh(recon_data[14, :, :], vmin=-3, vmax=3, cmap='RdBu_r')
+plt.figure()
+plt.gcf().set_size_inches(16, 9)
+proj = ccrs.PlateCarree()
+p = recon.sst[14].plot(
+    transform=proj,
+    subplot_kws={'projection': proj},
+    levels=np.arange(-3, 3, 0.2),
+    cmap='RdBu_r'
+)
+p.axes.coastlines()
 plt.title("Reconstruction for November 1982")
-plt.show()
+plt.savefig(data_dir / "IQUAM" / "Figures" / "Reconstruction_November_1982.png")
 
 for j in range(n_eofs):
     fig, axs = plt.subplots(1, 2)

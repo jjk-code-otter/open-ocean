@@ -14,7 +14,6 @@
 #   You should have received a copy of the GNU General Public License
 #   along with this program.  If not, see <https://www.gnu.org/licenses/>.
 import copy
-import matplotlib.pyplot as plt
 import numpy as np
 from scipy.optimize import minimize_scalar
 
@@ -185,4 +184,5 @@ class VBPCA:
         grid[0:self.n_eofs, self.mask] = self.w[:, :]
         grid[self.n_eofs:, self.mask] = self.mu[:]
         grid[self.n_eofs+1:, self.mask] = self.v
+
         return grid

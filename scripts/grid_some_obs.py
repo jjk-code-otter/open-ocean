@@ -13,11 +13,14 @@
 #
 #   You should have received a copy of the GNU General Public License
 #   along with this program.  If not, see <https://www.gnu.org/licenses/>.
+import itertools
+
 from open_ocean import gridder
 from open_ocean import interpolation as io
 from itertools import product
 import json
 import xarray as xr
+import netCDF4
 import pandas as pd
 import numpy as np
 from pathlib import Path
@@ -203,7 +206,6 @@ if __name__ == "__main__":
         argo_nobs[count, :, :] = grid.numobs5[0, :, :]
         argo_unc[count, :, :] = grid.unc5[0, :, :]
 
-
         # Do some interpolation stuff here
         kernel = io.Kernel(0.6, 1300.0, 1.5)
         interp1 = io.GPInterpolator(drifter_grid, kernel)
@@ -221,7 +223,8 @@ if __name__ == "__main__":
 
         interpolated_grid2 = interpolated_grid2 + interpolated_grid1
 
-        interpolated_grid2.plot_map_5x5(filename=data_dir / "IQUAM" / "Figures" / f"five_deg_interp_adjust_{year}{month:02d}.png")
+        interpolated_grid2.plot_map_5x5(
+            filename=data_dir / "IQUAM" / "Figures" / f"five_deg_interp_adjust_{year}{month:02d}.png")
         # interpolated_grid1.plot_map_5x5()
         # interpolated_grid2.plot_map_5x5()
 

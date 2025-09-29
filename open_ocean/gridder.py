@@ -109,6 +109,7 @@ class Grid:
                 [3, 0.3, 0.2],  # Moorings
                 [4, 0.3, 0.2],  # Moorings
                 [5, 0.1, 0.05],  # Argo
+                [99, 0.003, 0.0],  # Sea ice
             ]
 
         # Assign uncertainties for different observation types

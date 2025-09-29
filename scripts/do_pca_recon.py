@@ -35,9 +35,9 @@ unc = xr.open_dataset(unc_file)
 climatology = xr.open_dataset(data_dir / "SST_CCI_climatology" / "SST_1x1_daily.nc")
 areas = convert_climatology_to_ocean_areas(climatology)
 
-n_iterations = 5
-n_eofs =  3
-mask_percentage = 0.5
+n_iterations = 159
+n_eofs =  10
+mask_percentage = 0.3333
 
 interpolator = vbpa.VBPCA(
     data.sst.values,

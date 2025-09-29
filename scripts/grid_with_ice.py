@@ -31,11 +31,11 @@ import matplotlib.pyplot as plt
 from open_ocean.utils import convert_climatology_to_ocean_areas
 
 
-def fix_ice_array(year, month, ice_ym):
+def fix_ice_array(year, month, ice_ym, threshold_ice_fraction=0.8):
     """Coerce the ice array into the necessary shape"""
     ice_ym = ice_ym.sic.values
-    ice_ym = np.flip(ice_ym, 0) # latitudes are specified upside down
-    ice_ym = np.roll(ice_ym, 180, 1) # longitudes start at 0 not -180
+    ice_ym = np.flip(ice_ym, 0)  # latitudes are specified upside down
+    ice_ym = np.roll(ice_ym, 180, 1)  # longitudes start at 0 not -180
 
     latitude = np.linspace(-89.5, 89.5, 180)
     latitude = np.reshape(latitude, (180, 1))
@@ -45,7 +45,7 @@ def fix_ice_array(year, month, ice_ym):
     longitude = np.reshape(longitude, (1, 360))
     longitude = np.repeat(longitude, 180, 0)
 
-    selection = (ice_ym >= 0.8)
+    selection = (ice_ym >= threshold_ice_fraction)
 
     ice_ym = ice_ym[selection]
     longitude = longitude[selection]
@@ -55,11 +55,9 @@ def fix_ice_array(year, month, ice_ym):
     days = np.array([14 for _ in range(len(ice_ym))])
     dates = convert_dates(months, days)
 
-    # id = np.random.uniform(0, 100, len(ice_ym))
-    # id = [f'{x:.3f}' for x in id]
     id = ['ICE' for _ in range(len(ice_ym))]
 
-    values = [273.15-1.8 for _ in range(len(ice_ym))]
+    values = [273.15 - 1.8 for _ in range(len(ice_ym))]
     type = [99 for _ in range(len(ice_ym))]
 
     # ice5 = np.zeros((1, 36, 72))
@@ -75,7 +73,7 @@ def convert_dates(months, days):
     return [datetime(2020, months[i], days[i]) for i in range(len(months))]
 
 
-def grid_selection(year, month, iquam, selection, climatology, sampling_unc, ice, constant=None):
+def grid_selection(year, month, iquam, selection, climatology, sampling_unc, ice=None, constant=None):
     id = iquam.platform_id.values[selection]
     type = iquam.platform_type.values[selection]
     lats = iquam.lat.values[selection]
@@ -88,16 +86,19 @@ def grid_selection(year, month, iquam, selection, climatology, sampling_unc, ice
         iquam.day.values[selection].astype(int)
     )
 
-    # Add ice
-    ice_lon, ice_lat, ice_dates, ice_id, ice_values, ice_type = fix_ice_array(year, month, ice)
+    if ice is not None:
+        # Add ice by adding "pseudo obs" at the grid cell centres of cells containing ice of greater than
+        # threshold_ice_fraction. Anything with a sea ice concentration above that is set to -1.8C.
+        ice_lon, ice_lat, ice_dates, ice_id, ice_values, ice_type = fix_ice_array(
+            year, month, ice, threshold_ice_fraction=0.8
+        )
 
-    id = np.concatenate([id, ice_id])
-    type = np.concatenate([type, ice_type])
-    lats = np.concatenate([lats, ice_lat])
-    lons = np.concatenate([lons, ice_lon])
-    values = np.concatenate([values, ice_values])
-
-    dates = dates + ice_dates
+        id = np.concatenate([id, ice_id])
+        type = np.concatenate([type, ice_type])
+        lats = np.concatenate([lats, ice_lat])
+        lons = np.concatenate([lons, ice_lon])
+        values = np.concatenate([values, ice_values])
+        dates = dates + ice_dates
 
     # Grid up the data
     grid = gridder.Grid(2020, 10, id, lats, lons, dates, values, type, climatology)
@@ -123,7 +124,8 @@ if __name__ == "__main__":
     climatology = xr.open_dataset(data_dir / "SST_CCI_climatology" / "SST_1x1_daily.nc")
     areas = convert_climatology_to_ocean_areas(climatology)
     sampling_unc = xr.open_dataset(data_dir / "IQUAM" / "OutputData" / "sampling_uncertainty.nc")
-    ice = xr.open_dataset(data_dir / "IQUAM" / "InputData" / "HadISST.2.2.0.0_sea_ice_concentration.nc", engine='netcdf4')
+    ice = xr.open_dataset(data_dir / "IQUAM" / "InputData" / "HadISST.2.2.0.0_sea_ice_concentration.nc",
+                          engine='netcdf4')
 
     n_time = (2025 - 1981 + 1) * 12
 
@@ -168,7 +170,7 @@ if __name__ == "__main__":
 
         row = []
 
-        grid = grid_selection(year, month, iquam, selection, climatology, sampling_unc, iceym)
+        grid = grid_selection(year, month, iquam, selection, climatology, sampling_unc, ice=iceym)
         for key, entry in regions.items():
             gmsst, gmsst_unc = grid.calculate_area_average_with_covariance(
                 areas=areas, lat_range=entry["lat_range"], lon_range=entry["lon_range"]

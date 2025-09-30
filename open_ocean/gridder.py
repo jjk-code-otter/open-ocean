@@ -42,6 +42,7 @@ class Grid:
 
         # Eliminate any nans in the anomalies that arise from climatology coverage
         non_missing = ~(np.isnan(self.anomalies) | (self.anomalies > 8) | (self.anomalies < -8) )
+        self.non_missing = non_missing
 
         self.x_index = self.x_index[non_missing]
         self.y_index = self.y_index[non_missing]
@@ -314,6 +315,55 @@ class Grid:
         self.data5[0, y, x] = means[:]
         self.numobs5[0, y, x] = nobs[:]
         self.numsobs5[0, y, x] = nobs[:]
+
+    def add_correlated_error(self, label, array, unc_stdev):
+        if self.weights5 is None:
+            raise RuntimeError("No gridding weights. Please run a gridder first")
+        if self.covariance is None:
+            raise RuntimeError("No gridding covariance. Please create the covariance first")
+
+        df = pd.DataFrame(
+            {
+                'xy5': self.xy5,
+                'x': self.xindex5,
+                'y': self.yindex5,
+                'weight5': self.weights5,
+                label: array[self.non_missing],
+                'sigma_b': np.zeros(len(self.xy5)) + unc_stdev,
+            }
+        )
+
+        # Group the data by ID and grid cell
+        groups = df.groupby([label, 'xy5'])
+
+        aggregated_groups = groups.agg(
+            {
+                'xy5': 'first',
+                'x': 'first',
+                'y': 'first',
+                'weight5': 'sum',
+                'sigma_b': 'first',
+            }
+        )
+
+        groups2 = aggregated_groups.groupby([label])
+
+        additional_covariance = np.zeros((2592, 2592))
+
+        # loop over the separate labels and for each label calculate the contribution to the
+        # covariance matrix and add it on.
+        for thisid, group in groups2:
+            # Calculate the bits that we need to make the covariance
+            weight_sigma_b = group['weight5'].values * group['sigma_b'].values
+            # The error covariance matrix for this ship is the outer product of the weight time sigma_b
+            matrix = np.outer(weight_sigma_b, weight_sigma_b)
+            # Use the indices to locate this ID's contribution to the overall covariance matrix and add it on.
+            selection = np.ix_(group['xy5'].values, group['xy5'].values)
+            additional_covariance[selection] = additional_covariance[selection] + matrix[:, :]
+
+        self.covariance = self.covariance + additional_covariance
+
+        return additional_covariance
 
     def calculate_covariance(self, constant=None, separates=False):
         if self.weights5 is None:

@@ -15,9 +15,22 @@
 #   along with this program.  If not, see <https://www.gnu.org/licenses/>.
 from itertools import product
 from datetime import datetime
+import xarray as xr
 import numpy as np
 
-def convert_climatology_to_ocean_areas(climatology):
+def convert_climatology_to_ocean_areas(climatology: xr.DataArray) -> np.ndarray:
+    """
+    Given a 1x1 climatology file (SST CCI) calculate approximate ocean fractions in each 5x5 grid cell.
+
+    Parameters
+    ----------
+    climatology: xr.DataArray
+
+    Returns
+    -------
+    np.ndarray
+        A 36 x 72 array containing ocean fractions in each 5x5 grid cell.
+    """
     # Use the SST values in the climatology as an ocean mask. Set area to 1 for gridcells with SSTs, 0 otherwise
     ocean = np.where(np.isnan(climatology.sst[0].values), 0.0, 1.0)
     # Areas are the ocean area in the grid cell
@@ -26,5 +39,6 @@ def convert_climatology_to_ocean_areas(climatology):
         areas[yy, xx] = np.mean(ocean[yy * 5:(yy + 1) * 5, xx * 5:(xx + 1) * 5])
     return areas
 
-def convert_dates(months, days):
+def convert_dates(months:np.ndarray, days:np.ndarray) -> list:
+    """Given an array of months and an array of days, return a list of datetime objects"""
     return [datetime(2020, months[i], days[i]) for i in range(len(months))]

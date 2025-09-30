@@ -19,16 +19,34 @@ from scipy.optimize import minimize_scalar
 
 
 class VBPCA:
+    """
+    A class for performing Variational Bayesian Principal Component Analysis (VBPCA).
+    """
 
     def __init__(
             self,
-            data,
-            unc,
-            n_eofs,
-            mask_percentage=0.333,
-            grid_areas=None
+            data: np.ndarray,
+            unc: np.ndarray,
+            n_eofs: int,
+            mask_percentage: float = 0.333,
+            grid_areas: np.ndarray = None
     ):
+        """
+        Create the basic interpolator by feeding it data.
 
+        Parameters
+        ----------
+        data: np.ndarray
+            An arrray containing the data to be interpolated. It expects an array which is (time x latitude x longitude)
+        unc: np.ndarray
+            An array containing the uncertainty of the data. It expects an array which is (time x latitude x longitude)
+        n_eofs: int
+            Number of patterns to estimate
+        mask_percentage: float
+            Fraction of time points that must be populated to be included in the final fields.
+        grid_areas: np.ndarray or None
+            (optional) An array containing the area of the grid cells to be interpolated.
+        """
         # Grid areas are assumed to be 1.0 unless otherwise stated.
         self.grid_areas = grid_areas
         if self.grid_areas is not None:
@@ -75,8 +93,15 @@ class VBPCA:
         self.n_space = n_space
         self.n_time = n_time
 
-    def project_space(self):
+    def project_space(self) -> None:
+        """
+        The patterns are estimated by alternately updating the space and time parts of the model. This method
+        runs a space update.
 
+        Returns
+        -------
+        None
+        """
         for t in range(self.n_time):
             data_vector = np.reshape(self.data[t, :] - self.mu[:], (self.n_space, 1))
             unc_vector = np.reshape(self.unc[t, :], (self.n_space, 1))
@@ -104,7 +129,14 @@ class VBPCA:
             self.x[:, t] = xt[:, 0]
 
     def project_time(self):
+        """
+        The patterns are estimated by alternately updating the space and time parts of the model. This method
+        runs a time update.
 
+        Returns
+        -------
+        None
+        """
         self.full_recon = np.matmul(self.x.transpose(), self.w)
         residuals = (self.data - self.full_recon) / (self.unc + self.v)
 
@@ -136,8 +168,15 @@ class VBPCA:
 
             self.w[:, i] = wi[:, 0]
 
-    def update_v(self):
+    def update_v(self) -> None:
+        """
+        After every time update, we also need to update the variance parameter. This method finds the variance
+        parameter that minimizes the `func_to_minimize` function.
 
+        Returns
+        -------
+        None
+        """
         self.full_recon = np.matmul(self.x.transpose(), self.w)
         mu_repeated = np.repeat(np.reshape(self.mu, (1, self.n_space)), self.n_time, 0)
         residuals_sq = (self.data - mu_repeated - self.full_recon) ** 2
@@ -151,7 +190,21 @@ class VBPCA:
         res = minimize_scalar(func_to_minimize, bounds=(0.0, 10.0), method='bounded')
         self.v = res.x
 
-    def fit_model(self, max_iterations=100):
+    def fit_model(self, max_iterations=100) -> None:
+        """
+        Fits the model to the data by successively running the project_space, project_time and update_v methods.
+        The maximum number of iterations can be specified and defaults to 100. Convergence is detected when the
+        variance is unchanged from one iteration to the next.
+
+        Parameters
+        ----------
+        max_iterations: int
+            Maximum number of iterations to run.
+
+        Returns
+        -------
+        None
+        """
         previous_v = 99.99
         for i in range(max_iterations):
             print(f"Iteration {i}")
@@ -164,7 +217,15 @@ class VBPCA:
             else:
                 previous_v = self.v
 
-    def make_recon(self):
+    def make_recon(self) -> np.ndarray:
+        """
+        Build the reconstruction using information currently stored in the VBPCA object.
+
+        Returns
+        -------
+        np.ndarray
+            Array containing the reconstruction of the data.
+        """
         self.full_recon = np.matmul(self.x.transpose(), self.w)
         mu_repeated = np.repeat(np.reshape(self.mu, (1, self.n_space)), self.n_time, 0)
 
@@ -175,14 +236,32 @@ class VBPCA:
 
         return grid
 
-    def make_pc_series(self):
+    def make_pc_series(self) -> np.ndarray:
+        """
+        Return the timeseries weights for each of the patterns
+
+        Returns
+        -------
+        np.ndarray
+            Array containing the timeseries weights for each pattern shape (n_eofs, n_time)
+        """
         return self.x
 
     def make_eofs(self):
+        """
+        Return the patterns as a grid
+
+        Returns
+        -------
+        np.ndarray
+            Array containing the pattern weights for each pattern shape (n_eofs+2, 36, 72). The first n_eofs
+            entries are the patterns and then the next two fields contain the mean field (mu) and the variance
+            parameter (v).
+        """
         grid = copy.deepcopy(self.input_data)
         grid[:, :, :] = np.nan
         grid[0:self.n_eofs, self.mask] = self.w[:, :]
         grid[self.n_eofs:, self.mask] = self.mu[:]
-        grid[self.n_eofs+1:, self.mask] = self.v
+        grid[self.n_eofs + 1:, self.mask] = self.v
 
         return grid

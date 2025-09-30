@@ -22,6 +22,37 @@ import shutil
 import cdsapi
 import requests
 
+def downloader(url, out_path):
+    if out_path.exists():
+        print(f"File {out_path} already exists, skipping.")
+        return
+
+    try:
+        r = requests.get(url, stream=True, headers={'User-agent': 'Mozilla/5.0'})
+
+        if r.status_code == 200:
+            with open(out_path, 'wb') as f:
+                r.raw.decode_content = True
+                shutil.copyfileobj(r.raw, f)
+
+    except requests.exceptions.ConnectionError:
+        print(f"Couldn't connect to {url}")
+
+
+def get_ersstv6(year, month):
+    url = f"https://www.ncei.noaa.gov/pub/data/cmb/ersst/v5/v6/ersst.v6.{year}{month:02d}.nc"
+    data_dir = Path(os.getenv("OODIR"))
+    out_path = data_dir / "ERSSTv6" / f"ersst.v6.{year}{month:02d}.nc"
+    downloader(url, out_path)
+
+def get_icoads(year, month):
+    url = (f"https://www.ncei.noaa.gov/data/international-comprehensive-ocean-atmosphere/v3/archive/final-untrim/"
+           f"IMMA1_R3.1.0_{year}-{month:02d}.gz")
+    data_dir = Path(os.getenv("OODIR"))
+    out_path = data_dir / "ICOADS" / f"IMMA1_R3.1.0_{year}-{month:02d}.gz"
+    downloader(url, out_path)
+
+
 def get_iquam_year_month(year, month):
 
     if year <= 2016:
@@ -85,9 +116,12 @@ def get_cds_year_month(year, month):
     client.retrieve(dataset, request).download()
 
 if __name__ == '__main__':
-    for year, month in product(range(1851, 2026), range(1, 13)):
+    for year, month in product(range(1850, 2026), range(1, 13)):
         print(year, month)
-        if year >= 1981:
-            get_iquam_year_month(year, month)
+        get_icoads(year, month)
+        # get_ersstv6(year, month)
+
+        # if year >= 1981:
+        #     get_iquam_year_month(year, month)
 
         #get_cds_year_month(year, month)

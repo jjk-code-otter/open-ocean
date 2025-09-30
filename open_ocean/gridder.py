@@ -392,7 +392,7 @@ class Grid:
 
         if separates:
             return covariance_bias
-        
+
         return None
 
     def calculate_anomalies(self, climatology):
@@ -615,10 +615,12 @@ class Grid:
         ds = ds.mean(dim='time')
         Grid.plot_generic_map(ds, np.arange(-3, 3, 0.2), filename=filename, cmap='RdBu_r')
 
-    def plot_map_5x5(self, filename=None):
+    def plot_map_5x5(self, filename=None, levels=None):
         """Plot the 5x5 grid as a map"""
+        if levels is None:
+            levels = np.arange(-3, 3, 0.2)
         ds = Grid.make_xarray(self.data5, res=5)
-        Grid.plot_generic_map(ds, np.arange(-3, 3, 0.2), filename=filename, cmap='RdBu_r')
+        Grid.plot_generic_map(ds, levels, filename=filename, cmap='RdBu_r')
 
     def plot_map_numobs_5x5(self, filename=None):
         """Plot the 5x5 grid as a map"""

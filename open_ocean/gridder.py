@@ -315,7 +315,7 @@ class Grid:
         self.numobs5[0, y, x] = nobs[:]
         self.numsobs5[0, y, x] = nobs[:]
 
-    def calculate_covariance(self, constant=None):
+    def calculate_covariance(self, constant=None, separates=False):
         if self.weights5 is None:
             raise RuntimeError("No gridding weights. Please run a gridder first")
 
@@ -349,8 +349,14 @@ class Grid:
 
         self.covariance = np.zeros((2592, 2592))
 
+        if separates:
+            covariance_bias = np.zeros((2592, 2592))
+            if constant is not None:
+                covariance_bias[:, :] = constant * constant
+
         if constant is not None:
             self.covariance[:,:] = constant * constant
+
 
         # loop over the IDs and for each ID calculate the contribution to the covariance matrix and add it on.
         for thisid, group in groups2:
@@ -360,6 +366,11 @@ class Grid:
 
             # The error covariance matrix for this ship is the outer product of the weight time sigma_b
             matrix = np.outer(weight_sigma_b, weight_sigma_b)
+
+            if separates:
+                selection = np.ix_(group['xy5'].values, group['xy5'].values)
+                covariance_bias[selection] = covariance_bias[selection] + matrix[:, :]
+
             # On the diagonal we need to add the uncorrelated part of the uncertainty.
             n = len(weight_sigma_b)
             matrix[np.diag_indices(n)] = matrix[np.diag_indices(n)] + weight_sigma_m_sq
@@ -378,6 +389,11 @@ class Grid:
         # Extract the diagonal of the covariance matrix and populate the uncertainty grid
         self.unc5[:, :, :] = np.sqrt((self.covariance[np.diag_indices(2592)]).reshape((1, 36, 72)))
         self.unc5[self.unc5 == 0] = np.nan
+
+        if separates:
+            return covariance_bias
+        
+        return None
 
     def calculate_anomalies(self, climatology):
         """Calculate anomalies relative to the input climatology.

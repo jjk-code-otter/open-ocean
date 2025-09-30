@@ -125,3 +125,31 @@ class GPInterpolator:
         out_grid.unc5[0, :, :] = np.reshape(p[np.diag_indices(2592)], (36,72))
 
         return out_grid
+
+    def project_covariance(self, projection_covariance):
+        # Get the observation selector matrix
+        h, obs = self.get_h()
+
+        cht = np.matmul(self.cov, h.transpose())
+        hch = np.matmul(h, cht)
+
+        # Get the observation error covariance at obs locations
+        r = np.matmul(np.matmul(h, self.grid.covariance), h.transpose())
+        pc = np.matmul(projection_covariance, h.transpose())
+
+        inv_part = np.linalg.inv(hch + r)
+
+        hobs = np.matmul(h, obs)
+        mu = np.matmul(pc, np.matmul(inv_part, hobs))
+
+        p = np.matmul(inv_part, pc.transpose())
+        p = np.matmul(pc, p)
+        p = projection_covariance - p
+
+        out_grid = copy.deepcopy(self.grid)
+        out_grid.data5[0, :, :] = np.reshape(mu, (36, 72))
+        out_grid.covariance = p
+
+        out_grid.unc5[0, :, :] = np.reshape(p[np.diag_indices(2592)], (36, 72))
+
+        return out_grid

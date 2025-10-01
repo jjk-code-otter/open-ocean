@@ -19,6 +19,7 @@ from itertools import product
 from pathlib import Path
 import os
 
+import xarray as xr
 import pandas as pd
 
 import warnings
@@ -28,8 +29,17 @@ data_dir = Path(os.getenv("OODIR")) / "ICOADS"
 
 
 
-for year, month in product(range(1850, 1985), range(1, 13)):
+for year, month in product(range(1891, 1985), range(1, 13)):
     print(year, month)
+
+    # Read and decipher the track IDs.
+    track_file = data_dir / "KentTracks" / f"ICOADS_R3.0.0_{year}-{month:02d}_Tracks_Kent.nc"
+    tracks = xr.open_dataset(track_file)
+    track_ids = tracks.ID_Kent.values
+    decoded_ids=[]
+    for i in range(track_ids.shape[1]):
+        decoded_id = ''.join([(x.astype(str)) for x in track_ids[:, i]])
+        decoded_ids.append(decoded_id.rstrip().lstrip())
 
     filename = data_dir / "IMMA1_R3.0.0"  / f"IMMA1_R3.0.0_{year}-{month:02d}.gz"
 
@@ -59,12 +69,15 @@ for year, month in product(range(1850, 1985), range(1, 13)):
             "pt": 0,
             "sim": "",
             "snc": 0,
+            "trackid": "",
         },
         index=[0]
     )
     count = 0
+    count_all = 0
 
     for ob in iobs:
+
 
         row = []
 
@@ -93,10 +106,16 @@ for year, month in product(range(1850, 1985), range(1, 13)):
         row.append(sim)
         row.append(ob['SNC'])
 
-        if None in row[0:8]:
+        row.append(decoded_ids[count_all])
+        count_all += 1
+
+        if None in row[2:7]:
             continue
         else:
             df.loc[count] = row
             count+=1
 
     df.to_csv(csv_filename)
+    print(count_all, len(decoded_ids))
+    if count_all != len(decoded_ids):
+        print(f"Mismatch between length of ICOADS file {count_all} and Track file {decoded_ids}")

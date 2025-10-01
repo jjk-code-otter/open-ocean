@@ -28,12 +28,59 @@ import calendar
 import os
 from datetime import datetime
 import matplotlib.pyplot as plt
+import cartopy.crs as ccrs
 
 from open_ocean.utils import convert_climatology_to_ocean_areas, convert_dates
 
 
-def grid_selection(df, selection, climatology, sampling_unc, constant=None, separates=False):
-    id = df.id.values[selection]
+def plot_4_up(grid1, grid2, grid3, grid4, titles, filename):
+    print()
+    gridx = [
+        gridder.Grid.make_xarray(grid1.data5, res=5),
+        gridder.Grid.make_xarray(grid2.data5, res=5),
+        gridder.Grid.make_xarray(grid3.data5, res=5),
+        gridder.Grid.make_xarray(grid4.data5, res=5)
+    ]
+
+    fig, axes = plt.subplots(nrows=2, ncols=2, figsize=(16, 9), subplot_kw=dict(projection=ccrs.PlateCarree()))
+    plt.subplots_adjust(wspace=0, hspace=0)
+
+    xx = 0
+    yy = 0
+    for i, g in enumerate(gridx):
+        longitude = g.sst.longitude
+        latitude = g.sst.latitude
+        axes[xx, yy].coastlines(lw=1, color='black')
+        x = axes[xx, yy].pcolormesh(longitude, latitude, g.sst[0], vmin=-3.0, vmax=3.0, cmap='RdBu_r')
+        axes[xx,yy].text(-175, 77, titles[i], color='black')
+
+        xx += 1
+        if xx > 1:
+            xx = 0
+            yy += 1
+
+    plt.savefig(filename, bbox_inches='tight')
+    plt.close()
+
+def grid_selection(
+        df,
+        selection,
+        climatology,
+        sampling_unc,
+        constant=None,
+        separates=False,
+        tracking=True
+):
+    # Exclude observations from decks 874 (they're a mess) and 780 (subsurface data)
+    deck = df.dck.values
+    selection = selection & (deck != 874)
+    selection = selection & (deck != 780)
+
+    if tracking:
+        pid = df.trackid.values[selection]
+    else:
+        pid = df.id.values[selection]
+
     type = df.pt.values[selection]
     lats = df.lat.values[selection]
     lons = df.lon.values[selection]
@@ -63,7 +110,7 @@ def grid_selection(df, selection, climatology, sampling_unc, constant=None, sepa
 
     valid_days = (days > 0) & (days <= month_lengths[months - 1])
 
-    id = id[valid_days]
+    pid = pid[valid_days]
     type = type[valid_days]
     lats = lats[valid_days]
     lons = lons[valid_days]
@@ -76,7 +123,7 @@ def grid_selection(df, selection, climatology, sampling_unc, constant=None, sepa
     dates = convert_dates(months.astype(int), days.astype(int))
 
     # Grid up the data
-    grid = gridder.Grid(2020, 10, id, lats, lons, dates, values, type, climatology)
+    grid = gridder.Grid(2020, 10, pid, lats, lons, dates, values, type, climatology)
     grid.add_sampling_uncertainties(sampling_unc)
     grid.do_1x1_gridding()
     grid.do_one_step_5x5_gridding()
@@ -134,7 +181,7 @@ if __name__ == '__main__':
 
     count = -1
 
-    for year, month in product(range(1850, 1858), range(1, 13)):
+    for year, month in product(range(1850, 1884), range(1, 13)):
         print(year, month)
 
         file = data_dir / "ICOADS" / f"icoads_{year}{month:02d}.csv"
@@ -157,17 +204,17 @@ if __name__ == '__main__':
 
         kernel = io.Kernel(0.6, 1300.0, 1.5)
         interp = io.GPInterpolator(grid, kernel)
-        interp.make_covariance(constant=0.2)
+        interp.make_covariance(constant=0.5)
         interpolated_grid = interp.do_interpolation()
         interpolated_grid.data5[np.isnan(sampling_unc.sst.values[0:1, :, :])] = np.nan
 
         biases = interp.project_covariance(bias_cov)
         biases.data5[np.isnan(sampling_unc.sst.values[0:1, :, :])] = np.nan
-        biases.plot_map_5x5(filename=data_dir / "ICOADS" / "Figures" / f"biases_{year}{month:02d}.png")
+        #biases.plot_map_5x5(filename=data_dir / "ICOADS" / "Figures" / f"biases_{year}{month:02d}.png")
 
         deck_biases = interp.project_covariance(deck_cov)
         deck_biases.data5[np.isnan(sampling_unc.sst.values[0:1, :, :])] = np.nan
-        deck_biases.plot_map_5x5(filename=data_dir / "ICOADS" / "Figures" / f"deck_biases_{year}{month:02d}.png")
+        #deck_biases.plot_map_5x5(filename=data_dir / "ICOADS" / "Figures" / f"deck_biases_{year}{month:02d}.png")
 
         all_data[count, :, :] = grid.data5[0, :, :]
         all_interpolate[count, :, :] = interpolated_grid.data5[0, :, :]
@@ -175,13 +222,22 @@ if __name__ == '__main__':
         all_unc[count, :, :] = grid.unc5[0, :, :]
 
         # Plot some progress plots
-        grid.plot_map_1x1(filename=data_dir / "ICOADS" / "Figures" / f"one_deg_{year}{month:02d}.png")
-        grid.plot_map_5x5(filename=data_dir / "ICOADS" / "Figures" / f"five_deg_{year}{month:02d}.png")
-        interpolated_grid.plot_map_5x5(
-            filename=data_dir / "ICOADS" / "Figures" / f"five_deg_interp_{year}{month:02d}.png")
-        grid.plot_map_unc_5x5(filename=data_dir / "ICOADS" / "Figures" / f"unc_{year}{month:02d}.png")
-        interpolated_grid.plot_map_unc_5x5(
-            filename=data_dir / "ICOADS" / "Figures" / f"unc_interp_{year}{month:02d}.png")
+        #grid.plot_map_1x1(filename=data_dir / "ICOADS" / "Figures" / f"one_deg_{year}{month:02d}.png")
+        #grid.plot_map_5x5(filename=data_dir / "ICOADS" / "Figures" / f"five_deg_{year}{month:02d}.png")
+        #interpolated_grid.plot_map_5x5(
+        #    filename=data_dir / "ICOADS" / "Figures" / f"five_deg_interp_{year}{month:02d}.png")
+        #grid.plot_map_unc_5x5(filename=data_dir / "ICOADS" / "Figures" / f"unc_{year}{month:02d}.png")
+        #interpolated_grid.plot_map_unc_5x5(
+        #    filename=data_dir / "ICOADS" / "Figures" / f"unc_interp_{year}{month:02d}.png")
+
+        plot_4_up(
+            grid,
+            interpolated_grid,
+            biases,
+            deck_biases,
+            ['Basic grid','Interpolated grid','Individual ship biases','Deck biases'],
+            data_dir / "ICOADS" / "Figures" / f"four_up_{year}{month:02d}.png"
+        )
 
         # Calculate the area average for the grid
         ts.append(gmsst)
@@ -249,9 +305,9 @@ if __name__ == '__main__':
         label="Interpolated", color="red", alpha=0.5
     )
 
-    plt.xlim(1850, 2027)
-    plt.ylim(-1.0, 0.85)
-
+    plt.xlim(1850, 1885)
+    plt.ylim(-1.65, 0.375)
+    plt.gcf().set_size_inches(32, 10)
     plt.legend()
     plt.savefig(data_dir / "ICOADS" / "Figures" / "timeseries_with_uncertainty.png")
 

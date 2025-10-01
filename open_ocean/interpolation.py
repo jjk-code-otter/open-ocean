@@ -30,10 +30,12 @@ class Kernel:
         distances = np.sqrt((x1 - x2) ** 2 + (y1 - y2) ** 2 + (z1 - z2) ** 2)
 
         gamma_nu = gamma(self.shape)
-        root2nu = np.sqrt(2 * self.shape) * distances / self.length_scale
+        root2nu = np.sqrt(2 * self.shape) * distances[distances != 0] / self.length_scale
         mb2k =  kv(self.shape, root2nu)
 
-        C = (
+        C = np.full_like(distances, 0.0)
+
+        C[distances != 0] = (
                 (self.variance ** 2) *
                 ((2 ** (1 - self.shape)) / gamma_nu) *
                 (root2nu ** self.shape) *

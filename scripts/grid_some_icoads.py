@@ -103,7 +103,7 @@ if __name__ == '__main__':
     areas = convert_climatology_to_ocean_areas(climatology)
     sampling_unc = xr.open_dataset(data_dir / "IQUAM" / "OutputData" / "sampling_uncertainty.nc")
 
-    n_time = (2025 - 1981 + 1) * 12
+    n_time = (2025 - 1850 + 1) * 12
 
     all_data = np.zeros((n_time, 36, 72)) + np.nan
     all_nobs = np.zeros((n_time, 36, 72))
@@ -134,14 +134,14 @@ if __name__ == '__main__':
 
     count = -1
 
-    for year, month in product(range(1850, 1888), range(1, 13)):
+    for year, month in product(range(1850, 1858), range(1, 13)):
         print(year, month)
 
         file = data_dir / "ICOADS" / f"icoads_{year}{month:02d}.csv"
 
         df = pd.read_csv(file)
 
-        selection = (df.sst.values >= -1.8)
+        selection = ((df.snc.values == 1) & (df.sst.values >= -1.8))
 
         count += 1
         row = []
@@ -189,7 +189,7 @@ if __name__ == '__main__':
         time.append(year + (month - 1) / 12.)
 
         # Just ships
-        selection = (df.pt.values != 6) & (df.pt.values != 7)
+        selection = (df.snc.values == 1) & (df.pt.values != 6) & (df.pt.values != 7)
         grid = grid_selection(df, selection, climatology, sampling_unc, constant=0.2)
         for key, entry in regions.items():
             gmsst, gmsst_unc = grid.calculate_area_average_with_covariance(
@@ -204,7 +204,7 @@ if __name__ == '__main__':
         ship_grid = grid
 
         # Just drifters
-        selection = df.pt.values == 7
+        selection = (df.snc.values == 1) & (df.pt.values == 7)
         grid = grid_selection(df, selection, climatology, sampling_unc)
         for key, entry in regions.items():
             gmsst, gmsst_unc = grid.calculate_area_average_with_covariance(

@@ -31,12 +31,12 @@ data_dir = Path(os.getenv("OODIR")) / "ICOADS"
 for year, month in product(range(1850, 1985), range(1, 13)):
     print(year, month)
 
-    filename = data_dir / f"IMMA1_R3.1.0_{year}-{month:02d}.gz"
+    filename = data_dir / "IMMA1_R3.0.0"  / f"IMMA1_R3.0.0_{year}-{month:02d}.gz"
 
     csv_filename = data_dir / f"icoads_{year}{month:02d}.csv"
 
-    if csv_filename.exists():
-        continue
+    #if csv_filename.exists():
+    #    continue
 
     iobs = IMMA.get(str(filename))
 
@@ -57,7 +57,8 @@ for year, month in product(range(1850, 1985), range(1, 13)):
             "dck": 0,
             "c1": "",
             "pt": 0,
-            "sim": ""
+            "sim": "",
+            "snc": 0,
         },
         index=[0]
     )
@@ -90,6 +91,7 @@ for year, month in product(range(1850, 1985), range(1, 13)):
         except KeyError:
             sim = None
         row.append(sim)
+        row.append(ob['SNC'])
 
         if None in row[0:8]:
             continue

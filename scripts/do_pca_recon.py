@@ -35,7 +35,7 @@ unc = xr.open_dataset(unc_file)
 climatology = xr.open_dataset(data_dir / "SST_CCI_climatology" / "SST_1x1_daily.nc")
 areas = convert_climatology_to_ocean_areas(climatology)
 
-n_iterations = 159
+n_iterations = 150
 n_eofs =  10
 mask_percentage = 0.3333
 
@@ -51,6 +51,8 @@ interpolator.fit_model(max_iterations=n_iterations)
 recon_data = interpolator.make_recon()
 eofs = interpolator.make_eofs()
 pc_series = interpolator.make_pc_series()
+
+#eofs = interpolator.recalc_as_eigenvectors()
 
 time = np.arange(data.sst.values.shape[0])/12. + 1981. + 8./12.
 

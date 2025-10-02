@@ -16,7 +16,7 @@
 import copy
 import matplotlib.pyplot as plt
 import numpy as np
-from scipy.special import gamma, kv
+from scipy.special import gamma, kv, sph_harm_y
 
 
 class Kernel:
@@ -65,8 +65,43 @@ class GPInterpolator:
 
         return x, y, z
 
-    def add_covariance(self, input_covariance):
+    def replace_covariance(self, input_covariance):
+        """Replace the current covariance with a completely new one"""
         self.cov = input_covariance
+
+    def add_spherical_harmonics_to_covariance(self, n, m, variance):
+        """
+        Add spherical harmonics to the covariance matrix. This is the real component of the
+        harmonics.
+
+        Parameters
+        ----------
+        n: int
+            n >= 0 Order of the harmonic.
+        m: int
+            in range -n, n
+        variance: float
+            variance for the harmonic.
+
+        Returns
+        -------
+
+        """
+        # Not that azimuth is defined from the north pole.
+        latitudes = (90.0 - self.grid.get_latitudes().flatten()) * np.pi / 180.
+        longitudes = self.grid.get_longitudes().flatten() * np.pi / 180.
+
+        sph_cov = np.real(sph_harm_y(n, m, latitudes, longitudes))
+        sph_cov = sph_cov / np.max(sph_cov)
+        sph_cov = variance * sph_cov
+
+        # Now convert into covariance matrix
+        sph_cov = np.reshape(sph_cov, (2592, 1))
+        sph_cov = np.outer(sph_cov, sph_cov)
+
+        # Add to covariance.
+        self.cov =  sph_cov + self.cov
+
 
     def make_covariance(self, constant=None):
         latitudes = self.grid.get_latitudes().flatten()

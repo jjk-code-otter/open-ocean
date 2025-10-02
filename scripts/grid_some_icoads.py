@@ -165,7 +165,7 @@ if __name__ == '__main__':
     data_dir = Path(os.getenv("OODIR"))  #
 
     start_year = 1850
-    end_year = 1985
+    end_year = 1975
 
     ts = []
     ts_unc = []
@@ -233,6 +233,11 @@ if __name__ == '__main__':
         kernel = io.Kernel(0.6, 1300.0, 1.5)
         interp = io.GPInterpolator(grid, kernel)
         interp.make_covariance(constant=0.5)
+
+        for n in range(1,4):
+            for m in range(-1*n, n):
+                interp.add_spherical_harmonics_to_covariance(n, m, 0.2)
+
         interpolated_grid = interp.do_interpolation()
         interpolated_grid.data5[np.isnan(sampling_unc.sst.values[0:1, :, :])] = np.nan
 
@@ -365,29 +370,29 @@ if __name__ == '__main__':
     oo_uncertainty = gridder.Grid.make_xarray(all_unc, res=5, times=date_range)
     oo_numobs = gridder.Grid.make_xarray(all_nobs, res=5, times=date_range)
 
-    oo_anomalies.to_netcdf(data_dir / "ICOADS" / "oo_anomalies.nc")
-    oo_interpolated.to_netcdf(data_dir / "ICOADS" / "oo_interpolated.nc")
-    oo_uncertainty.to_netcdf(data_dir / "ICOADS" / "oo_uncertainty.nc")
-    oo_numobs.to_netcdf(data_dir / "ICOADS" / "oo_numobs.nc")
+    oo_anomalies.to_netcdf(data_dir / "ICOADS" / "OutputData" / "oo_anomalies.nc")
+    oo_interpolated.to_netcdf(data_dir / "ICOADS" / "OutputData" / "oo_interpolated.nc")
+    oo_uncertainty.to_netcdf(data_dir / "ICOADS" / "OutputData" / "oo_uncertainty.nc")
+    oo_numobs.to_netcdf(data_dir / "ICOADS" / "OutputData" / "oo_numobs.nc")
 
     oo_anomalies = gridder.Grid.make_xarray(ship_data, res=5, times=date_range)
     oo_uncertainty = gridder.Grid.make_xarray(ship_unc, res=5, times=date_range)
     oo_numobs = gridder.Grid.make_xarray(ship_nobs, res=5, times=date_range)
 
-    oo_anomalies.to_netcdf(data_dir / "ICOADS" / "oo_anomalies_ship.nc")
-    oo_uncertainty.to_netcdf(data_dir / "ICOADS" / "oo_uncertainty_ship.nc")
-    oo_numobs.to_netcdf(data_dir / "ICOADS" / "oo_numobs_ship.nc")
+    oo_anomalies.to_netcdf(data_dir / "ICOADS" / "OutputData" / "oo_anomalies_ship.nc")
+    oo_uncertainty.to_netcdf(data_dir / "ICOADS" / "OutputData" / "oo_uncertainty_ship.nc")
+    oo_numobs.to_netcdf(data_dir / "ICOADS" / "OutputData" / "oo_numobs_ship.nc")
 
     oo_anomalies = gridder.Grid.make_xarray(drifter_data, res=5, times=date_range)
     oo_uncertainty = gridder.Grid.make_xarray(drifter_unc, res=5, times=date_range)
     oo_numobs = gridder.Grid.make_xarray(drifter_nobs, res=5, times=date_range)
 
-    oo_anomalies.to_netcdf(data_dir / "ICOADS" / "oo_anomalies_drifter.nc")
-    oo_uncertainty.to_netcdf(data_dir / "ICOADS" / "oo_uncertainty_drifter.nc")
-    oo_numobs.to_netcdf(data_dir / "ICOADS" / "oo_numobs_drifter.nc")
+    oo_anomalies.to_netcdf(data_dir / "ICOADS" / "OutputData" / "oo_anomalies_drifter.nc")
+    oo_uncertainty.to_netcdf(data_dir / "ICOADS" / "OutputData" / "oo_uncertainty_drifter.nc")
+    oo_numobs.to_netcdf(data_dir / "ICOADS" / "OutputData" / "oo_numobs_drifter.nc")
 
     oo_anomalies = gridder.Grid.make_xarray(interp_data, res=5, times=date_range)
     oo_uncertainty = gridder.Grid.make_xarray(interp_unc, res=5, times=date_range)
 
-    oo_anomalies.to_netcdf(data_dir / "ICOADS" / "oo_anomalies_interp_adjusted.nc")
-    oo_uncertainty.to_netcdf(data_dir / "ICOADS" / "oo_uncertainty_interp_adjusted.nc")
+    oo_anomalies.to_netcdf(data_dir / "ICOADS" / "OutputData" / "oo_anomalies_interp_adjusted.nc")
+    oo_uncertainty.to_netcdf(data_dir / "ICOADS" / "OutputData" / "oo_uncertainty_interp_adjusted.nc")

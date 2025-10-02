@@ -265,3 +265,11 @@ class VBPCA:
         grid[self.n_eofs + 1:, self.mask] = self.v
 
         return grid
+
+    def recalc_as_eigenvectors(self):
+        reconstituted_cov = np.matmul(self.w.transpose(), self.w)
+        vals, vecs = np.linalg.eig(reconstituted_cov)
+        grid = copy.deepcopy(self.input_data)
+        grid[:, :, :] = np.nan
+        grid[0:self.n_eofs, self.mask] = vecs[:, 0:self.n_eofs].transpose()
+        return grid

@@ -34,7 +34,6 @@ from open_ocean.utils import convert_climatology_to_ocean_areas, convert_dates
 
 
 def plot_4_up(grid1, grid2, grid3, grid4, titles, filename):
-    print()
     gridx = [
         gridder.Grid.make_xarray(grid1.data5, res=5),
         gridder.Grid.make_xarray(grid2.data5, res=5),
@@ -71,6 +70,32 @@ def grid_selection(
         separates=False,
         tracking=True
 ):
+    """
+    Grid a particular selection of data
+
+    Parameters
+    ----------
+    df: pandas.DataFrame
+        DataFrame containing the data to be gridded. Required columns 'pt', 'lat', 'lon', 'dck', 'day', 'month', 'sst',
+        'id'. If tracking is set, then 'trackid' is also required
+    selection: np.ndarray
+        Array containing the selection of data to be gridded
+    climatology: xarray.DataArray
+        SST climatology
+    sampling_unc: np.ndarray
+        Array containing the sampling uncertainty for one observations. Shape (36,72)
+    constant: float or None
+        Constant value to be added to the covariance matrix.
+    separates: bool
+        If set to True, return the bias and deck covariances in addition to the grid
+    tracking: bool
+        If set to True, covariances are calculated using the `trackid` instead of the ICOADS `id`.
+
+    Returns
+    -------
+    Grid or (Grid, np.ndarray, np.ndarray)
+        Return the gridded data or the gridded data and two covariance matrices.
+    """
     # Exclude observations from decks 874 (they're a mess) and 780 (subsurface data)
     deck = df.dck.values
     selection = selection & (deck != 874)
@@ -139,6 +164,9 @@ def grid_selection(
 if __name__ == '__main__':
     data_dir = Path(os.getenv("OODIR"))  #
 
+    start_year = 1850
+    end_year = 1985
+
     ts = []
     ts_unc = []
     time = []
@@ -181,7 +209,7 @@ if __name__ == '__main__':
 
     count = -1
 
-    for year, month in product(range(1850, 1884), range(1, 13)):
+    for year, month in product(range(start_year, end_year+1), range(1, 13)):
         print(year, month)
 
         file = data_dir / "ICOADS" / f"icoads_{year}{month:02d}.csv"
@@ -235,7 +263,7 @@ if __name__ == '__main__':
             interpolated_grid,
             biases,
             deck_biases,
-            ['Basic grid','Interpolated grid','Individual ship biases','Deck biases'],
+            [f'{year}-{month:02d} Basic grid','Interpolated grid','Individual ship biases','Deck biases'],
             data_dir / "ICOADS" / "Figures" / f"four_up_{year}{month:02d}.png"
         )
 
@@ -305,9 +333,9 @@ if __name__ == '__main__':
         label="Interpolated", color="red", alpha=0.5
     )
 
-    plt.xlim(1850, 1885)
-    plt.ylim(-1.65, 0.375)
-    plt.gcf().set_size_inches(32, 10)
+    plt.xlim(start_year-1, end_year+1)
+    plt.ylim(-1.65, 0.75)
+    plt.gcf().set_size_inches(42, 10)
     plt.legend()
     plt.savefig(data_dir / "ICOADS" / "Figures" / "timeseries_with_uncertainty.png")
 

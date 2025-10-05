@@ -314,11 +314,12 @@ class Grid:
             patch = triplearray[yy-1:yy+2, xx+72-1:xx+72+2]
             centre = patch[1,1]
             patch[1,1] = np.nan
-            difference[yy, xx] = abs(centre-np.mean(patch[~np.isnan(patch)]))
-            if difference[yy,xx] > 4.0:
-                self.data5[0, yy, xx] = np.nan
-                self.numobs5[0, yy, xx] = 0
-                print("zapped bullseye")
+            if np.count_nonzero(~np.isnan(patch)) > 0:
+                difference[yy, xx] = abs(centre-np.mean(patch[~np.isnan(patch)]))
+                if difference[yy,xx] > 4.0:
+                    self.data5[0, yy, xx] = np.nan
+                    self.numobs5[0, yy, xx] = 0
+                    print("zapped bullseye")
 
         # plt.hist(difference[~np.isnan(difference)].flatten(), bins=100)
         # plt.show()
@@ -422,7 +423,7 @@ class Grid:
             selection = np.ix_(group['xy5'].values, group['xy5'].values)
             additional_covariance[selection] = additional_covariance[selection] + matrix[:, :]
             if full_dict:
-                output_dict[thisid] = [
+                output_dict[thisid[0]] = [
                     matrix,
                     group['weight5'].values,
                     group['xy5'].values
@@ -431,7 +432,7 @@ class Grid:
         self.covariance = self.covariance + additional_covariance
 
         if full_dict:
-            return additional_covariance, full_dict
+            return additional_covariance, output_dict
 
         return additional_covariance
 
@@ -650,6 +651,17 @@ class Grid:
         weights = np.cos(np.deg2rad(ds.latitude))
         weighted_mean = ds.weighted(weights).mean(("longitude", "latitude"))
         return weighted_mean.sst.values[0]
+
+    def calculate_regional_averages(self, regions, areas):
+        sub_row = []
+        for key, entry in regions.items():
+            gmsst, gmsst_unc = self.calculate_area_average_with_covariance(
+                areas=areas, lat_range=entry["lat_range"], lon_range=entry["lon_range"]
+            )
+            sub_row.append(gmsst)
+            sub_row.append(gmsst_unc)
+            print(f"{key}: {gmsst:.3f} ± {gmsst_unc:.3f}")
+        return sub_row
 
     def get_latitudes(self):
         lat = np.linspace(-87.5, 87.5, 36)

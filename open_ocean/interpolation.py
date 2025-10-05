@@ -191,3 +191,29 @@ class GPInterpolator:
         out_grid.unc5[0, :, :] = np.reshape(p[np.diag_indices(2592)], (36, 72))
 
         return out_grid
+
+    def project_covariances_from_dict(self, cov_dict):
+        out_grids = {}
+        for key, values in cov_dict.items():
+            built_cov = np.zeros((2592, 2592))
+            selection = np.ix_(values[2], values[2])
+            built_cov[selection] = built_cov[selection] + values[0][:, :]
+
+            g = self.project_covariance(built_cov)
+
+            # Need to scale by the inverse of the weights to get the expected constant value
+            scaling = np.zeros(2592) * 1.0
+            scaling[values[2]] = values[1][:]
+            unc = np.sqrt(g.covariance[np.diag_indices(2592)] / scaling)
+
+            scaling = np.reshape(scaling, (1, 36,72))
+            g.data5 = g.data5 / scaling
+            g.unc5 = np.reshape(unc, (1, 36,72))
+
+            out_grids[key] = g
+
+        return out_grids
+
+
+
+        return out_grids

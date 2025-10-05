@@ -136,11 +136,7 @@ if __name__ == "__main__":
 
         kernel = io.Kernel(0.6, 1300.0, 1.5)
         interp = io.GPInterpolator(grid, kernel)
-        interp.make_covariance(constant=0.2)
-
-        for n in range(1,3):
-            for m in range(-1*n, n):
-                interp.add_spherical_harmonics_to_covariance(n, m, 0.03)
+        interp.make_covariance(constant=0.5)
 
         interpolated_grid = interp.do_interpolation()
         interpolated_grid.data5[np.isnan(sampling_unc.sst.values[0:1, :, :])] = np.nan
@@ -213,7 +209,7 @@ if __name__ == "__main__":
         # Do some interpolation stuff here
         kernel = io.Kernel(0.6, 1300.0, 1.5)
         interp1 = io.GPInterpolator(drifter_grid, kernel)
-        interp1.make_covariance(constant=0.2)
+        interp1.make_covariance(constant=0.5)
         interpolated_grid1 = interp1.do_interpolation()
         interpolated_grid1.data5[np.isnan(sampling_unc.sst.values[0:1, :, :])] = np.nan
 

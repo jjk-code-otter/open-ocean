@@ -14,6 +14,7 @@
 #   You should have received a copy of the GNU General Public License
 #   along with this program.  If not, see <https://www.gnu.org/licenses/>.
 import copy
+import itertools
 
 import xarray as xr
 import pandas as pd
@@ -23,13 +24,24 @@ import matplotlib.pyplot as plt
 import cartopy.crs as ccrs
 
 
-def trim_mean_wrapper(inarr):
+def trim_mean_wrapper(inarr: np.ndarray) -> float:
     return trim_mean(inarr, proportiontocut=0.1)
 
 
 class Grid:
 
-    def __init__(self, year, month, platform_id, lat, lon, date, value, platform_type, climatology):
+    def __init__(
+            self,
+            year: int,
+            month: int,
+            platform_id: np.ndarray,
+            lat: np.ndarray,
+            lon: np.ndarray,
+            date,
+            value: np.ndarray,
+            platform_type: np.ndarray,
+            climatology: xr.Dataset
+    ):
         self.year = year
         self.month = month
 
@@ -41,7 +53,7 @@ class Grid:
         self.anomalies = self.calculate_anomalies(climatology)
 
         # Eliminate any nans in the anomalies that arise from climatology coverage
-        non_missing = ~(np.isnan(self.anomalies) | (self.anomalies > 8) | (self.anomalies < -8) )
+        non_missing = ~(np.isnan(self.anomalies) | (self.anomalies > 8) | (self.anomalies < -8))
         self.non_missing = non_missing
 
         self.x_index = self.x_index[non_missing]
@@ -96,7 +108,7 @@ class Grid:
 
     def add_sampling_uncertainties(self, sampling_unc=None):
         if sampling_unc is None:
-            self.sigma_s = np.zeros((36,72))
+            self.sigma_s = np.zeros((36, 72))
         else:
             self.sigma_s = sampling_unc.sst.values[self.month - 1, :, :]
             self.sigma_s[np.isnan(self.sigma_s)] = 1.5
@@ -267,6 +279,50 @@ class Grid:
         self.numobs5[0, y, x] = nobs[:]
         self.numsobs5[0, y, x] = nobs[:]
 
+    def tidy_grid(self):
+        for xx, yy in itertools.product(range(72), range(36)):
+            if (
+                    self.numobs5[0, yy, xx] == 1 and
+                    np.abs(self.data5[0, yy, xx]) > 4.0
+            ):
+                array = copy.deepcopy(self.numobs5[0, :, :])
+
+                (lox, hix, loy, hiy) = (xx-1, xx+1, yy-1, yy+1)
+
+                if lox < 0:
+                    array = np.roll(array, -1, 1)
+                    lox = lox + 1
+                    hix = hix + 1
+                if hix > 71:
+                    array = np.roll(array, 1, 1)
+                    lox = lox - 1
+                    hix = hix - 1
+
+                if loy < 0: loy = 0
+                if hiy > 35: hiy = 35
+
+                if np.sum(array[loy:hiy+1, lox:hix+1]) == 1:
+                    self.data5[0, yy, xx] = np.nan
+                    self.numobs5[0, yy, xx] = 0
+                    print("removed isolated ob")
+
+        triplearray = np.concatenate([self.data5[0, :, :] for _ in range(3)], axis=1)
+        difference = np.full((36,72), np.nan)
+        for xx, yy in itertools.product(range(72), range(1,35)):
+            if np.isnan(self.data5[0, yy, xx]):
+                continue
+            patch = triplearray[yy-1:yy+2, xx+72-1:xx+72+2]
+            centre = patch[1,1]
+            patch[1,1] = np.nan
+            difference[yy, xx] = abs(centre-np.mean(patch[~np.isnan(patch)]))
+            if difference[yy,xx] > 4.0:
+                self.data5[0, yy, xx] = np.nan
+                self.numobs5[0, yy, xx] = 0
+                print("zapped bullseye")
+
+        # plt.hist(difference[~np.isnan(difference)].flatten(), bins=100)
+        # plt.show()
+
     def do_one_step_5x5_sampler_gridding(self, n_samples=1, rng=np.random.default_rng()):
         # Pack the data into a DataFrame so that we can use Pandas aggregation magic
         df = pd.DataFrame(
@@ -316,7 +372,7 @@ class Grid:
         self.numobs5[0, y, x] = nobs[:]
         self.numsobs5[0, y, x] = nobs[:]
 
-    def add_correlated_error(self, label, array, unc_stdev):
+    def add_correlated_error(self, label, array, unc_stdev, exclusions=(), full_dict=False):
         if self.weights5 is None:
             raise RuntimeError("No gridding weights. Please run a gridder first")
         if self.covariance is None:
@@ -350,9 +406,14 @@ class Grid:
 
         additional_covariance = np.zeros((2592, 2592))
 
+        if full_dict:
+            output_dict = {}
+
         # loop over the separate labels and for each label calculate the contribution to the
         # covariance matrix and add it on.
         for thisid, group in groups2:
+            if thisid[0] in exclusions:
+                continue
             # Calculate the bits that we need to make the covariance
             weight_sigma_b = group['weight5'].values * group['sigma_b'].values
             # The error covariance matrix for this ship is the outer product of the weight time sigma_b
@@ -360,8 +421,17 @@ class Grid:
             # Use the indices to locate this ID's contribution to the overall covariance matrix and add it on.
             selection = np.ix_(group['xy5'].values, group['xy5'].values)
             additional_covariance[selection] = additional_covariance[selection] + matrix[:, :]
+            if full_dict:
+                output_dict[thisid] = [
+                    matrix,
+                    group['weight5'].values,
+                    group['xy5'].values
+                ]
 
         self.covariance = self.covariance + additional_covariance
+
+        if full_dict:
+            return additional_covariance, full_dict
 
         return additional_covariance
 
@@ -405,8 +475,7 @@ class Grid:
                 covariance_bias[:, :] = constant * constant
 
         if constant is not None:
-            self.covariance[:,:] = constant * constant
-
+            self.covariance[:, :] = constant * constant
 
         # loop over the IDs and for each ID calculate the contribution to the covariance matrix and add it on.
         for thisid, group in groups2:
@@ -431,8 +500,8 @@ class Grid:
 
         # Sampling uncertainty
         flat_numsobs = self.numsobs5.flatten()
-        flat_numsobs[flat_numsobs != 0] = 1.0/flat_numsobs[flat_numsobs != 0]
-        sampling_unc = (self.sigma_s.flatten()**2) * flat_numsobs
+        flat_numsobs[flat_numsobs != 0] = 1.0 / flat_numsobs[flat_numsobs != 0]
+        sampling_unc = (self.sigma_s.flatten() ** 2) * flat_numsobs
         # Add sampling uncertainty to the diagonal
         self.covariance[np.diag_indices(2592)] = self.covariance[np.diag_indices(2592)] + sampling_unc
 
@@ -500,7 +569,12 @@ class Grid:
         day_number = cumulative_month_lengths[month - 1] + day - 1
         return day_number.astype(int)
 
-    def calculate_area_average_with_covariance(self, areas=None, lat_range=None, lon_range=None):
+    def calculate_area_average_with_covariance(
+            self,
+            areas=None,
+            lat_range: list | None = None,
+            lon_range: list | None = None
+    ):
         """
         Calculate the area average of the grid and the corresponding uncertainty using the covariance. Grid cells
         are weighted by the cosine of the latitude. An additional keyword argument can be used to provide the

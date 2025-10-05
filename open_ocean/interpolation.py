@@ -102,6 +102,7 @@ class GPInterpolator:
         # Add to covariance.
         self.cov =  sph_cov + self.cov
 
+        return sph_cov
 
     def make_covariance(self, constant=None):
         latitudes = self.grid.get_latitudes().flatten()

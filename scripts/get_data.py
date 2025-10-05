@@ -52,6 +52,19 @@ def get_icoads(year, month):
     out_path = data_dir / "ICOADS" / f"IMMA1_R3.1.0_{year}-{month:02d}.gz"
     downloader(url, out_path)
 
+def get_icoads_300(year):
+    url = (f"https://osdf1.newy32aoa.nrp.internet2.edu:8443/ncar/gdex/d548000/imma1_r3.0.0/"
+           f"IMMA1_R3.0.0_{year}.tar")
+    data_dir = Path(os.getenv("OODIR"))
+    out_path = data_dir / "ICOADS" / f"IMMA1_R3.0.0_{year}.tar"
+    downloader(url, out_path)
+
+def get_icoads_nrt_302(year, month):
+    url = (f"https://mghpcc-cache.nationalresearchplatform.org:8443/ncar/gdex/d548000/imma1_r3.0.2/"
+           f"IMMA1_R3.0.2_{year}-{month:02d}.gz")
+    data_dir = Path(os.getenv("OODIR"))
+    out_path = data_dir / "ICOADS" / "IMMA1_R3.0.0" / f"IMMA1_R3.0.2_{year}-{month:02d}.gz"
+    downloader(url, out_path)
 
 def get_iquam_year_month(year, month):
 
@@ -116,12 +129,6 @@ def get_cds_year_month(year, month):
     client.retrieve(dataset, request).download()
 
 if __name__ == '__main__':
-    for year, month in product(range(1850, 2026), range(1, 13)):
+    for year, month in product(range(2015, 2026), range(1, 13)):
         print(year, month)
-        get_icoads(year, month)
-        # get_ersstv6(year, month)
-
-        # if year >= 1981:
-        #     get_iquam_year_month(year, month)
-
-        #get_cds_year_month(year, month)
+        get_icoads_nrt_302(year, month)

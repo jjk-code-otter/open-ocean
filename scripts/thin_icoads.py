@@ -34,7 +34,7 @@ data_dir = Path(os.getenv("OODIR")) / "ICOADS"
 with open('list_of_ids_that_are_not_ships.txt', 'r') as f:
     forbidden_ids = [x.rstrip() for x in f.readlines()]
 
-for year, month in product(range(1850, 2006), range(1, 13)):
+for year, month in product(range(2008, 2010), range(1, 13)):
     print(year, month)
 
     # Read and decipher the track IDs.
@@ -49,8 +49,8 @@ for year, month in product(range(1850, 2006), range(1, 13)):
     icoads_filename = data_dir / "IMMA1_R3.0.0" / f"IMMA1_R3.0.0_{year}-{month:02d}.gz"
     csv_filename = data_dir / f"icoads_{year}{month:02d}.csv"
 
-    # if csv_filename.exists():
-    #    continue
+    if csv_filename.exists():
+       continue
 
     iobs = IMMA.get(str(icoads_filename))
 

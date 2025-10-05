@@ -18,7 +18,7 @@ from datetime import datetime
 import xarray as xr
 import numpy as np
 
-def convert_climatology_to_ocean_areas(climatology: xr.DataArray) -> np.ndarray:
+def convert_climatology_to_ocean_areas(climatology: xr.Dataset) -> np.ndarray:
     """
     Given a 1x1 climatology file (SST CCI) calculate approximate ocean fractions in each 5x5 grid cell.
 

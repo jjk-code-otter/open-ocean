@@ -301,157 +301,11 @@ class IcoadsGridder:
             np.min(nonmissing)
         )
 
-# def grid_selection(
-#         year,
-#         month,
-#         df,
-#         selection,
-#         climatology,
-#         sampling_unc,
-#         constant=None,
-#         separates=False,
-#         calc_deck_level_cov=False,
-#         tracking=True,
-#         ice=None,
-# ) -> gridder.Grid:
-#     """
-#     Grid a particular selection of data
-#
-#     Parameters
-#     ----------
-#     df: pandas.DataFrame
-#         DataFrame containing the data to be gridded. Required columns 'pt', 'lat', 'lon', 'dck', 'day', 'month', 'sst',
-#         'id'. If tracking is set, then 'trackid' is also required
-#     selection: np.ndarray
-#         Array containing the selection of data to be gridded
-#     climatology: xarray.DataArray
-#         SST climatology
-#     sampling_unc: np.ndarray
-#         Array containing the sampling uncertainty for one observations. Shape (36,72)
-#     constant: float or None
-#         Constant value to be added to the covariance matrix.
-#     separates: bool
-#         If set to True, return the bias and deck covariances in addition to the grid
-#     tracking: bool
-#         If set to True, covariances are calculated using the `trackid` instead of the ICOADS `id`.
-#     ice: xarray.DataArray or None
-#         Ice data set or None
-#
-#     Returns
-#     -------
-#     Grid or (Grid, np.ndarray, np.ndarray)
-#         Return the gridded data or the gridded data and two covariance matrices.
-#     """
-#     # Exclude observations from decks 874 (they're a mess) and 780 (subsurface data)
-#     deck = df.dck.values
-#     selection = selection & (deck != 874)
-#     selection = selection & (deck != 780)
-#
-#     type = df.pt.values[selection]
-#     lats = df.lat.values[selection]
-#     lons = df.lon.values[selection]
-#     values = df.sst.values[selection] + 273.15
-#     days = df.day.values[selection]
-#     months = df.month.values[selection]
-#     deck = df.dck.values[selection]
-#
-#     # If we are using the Kent tracking IDs then we need to copy in the drifter and mooring IDs from ICOADS
-#     if tracking:
-#         pid = df.trackid.values[selection]
-#         icoads_id = df.id.values[selection]
-#         pid[type == 7] = icoads_id[type == 7]
-#         pid[type == 6] = icoads_id[type == 6]
-#
-#     else:
-#         pid = df.id.values[selection]
-#
-#     # Drifters and moorings don't have deck biases
-#     deck[type == 7] = -2
-#     deck[type == 6] = -2
-#
-#     # ICOADS longitudes are specified in the range -180 to 360 but we want -180 to 180.
-#     lons[lons > 180.0] = lons[lons > 180.0] - 360.0
-#
-#     # ICOAD has different platform type identifiers to IQUAM types that the code expects.
-#     pt_copy = copy.deepcopy(type)
-#     # IQUAM platform types
-#     SHIP = 1
-#     DRIFT = 2
-#     MOOR = 3
-#     ARGO = 5
-#
-#     pt_copy[:] = SHIP
-#     pt_copy[type == 7] = DRIFT
-#     pt_copy[type == 6] = MOOR
-#
-#     type = pt_copy
-#
-#     # Some ICOADS observations have bad dates
-#     month_lengths = np.array([31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31])
-#     if calendar.isleap(df.year.values[0]):
-#         month_lengths[1] = 29
-#     valid_days = (days > 0) & (days <= month_lengths[months - 1])
-#
-#     pid = pid[valid_days]
-#     type = type[valid_days]
-#     lats = lats[valid_days]
-#     lons = lons[valid_days]
-#     values = values[valid_days]
-#     months = months[valid_days]
-#     days = days[valid_days]
-#     deck = deck[valid_days]
-#
-#     # Japanese truncated data (Chan et al. 2019)
-#     values[deck == 118] = values[deck == 118] + 0.45
-#     values[deck == 119] = values[deck == 119] + 0.45
-#
-#     # Convert dates
-#     dates = convert_dates(months.astype(int), days.astype(int))
-#
-#     # Add ice by adding "pseudo obs" at the grid cell centres of cells containing ice of greater than
-#     # threshold_ice_fraction. Anything with a sea ice concentration above that is set to -1.8C.
-#     if ice is not None:
-#         ice_lon, ice_lat, ice_dates, ice_id, ice_values, ice_type, ice_deck = fix_ice_array(
-#             month, ice, threshold_ice_fraction=0.9
-#         )
-#         pid = np.concatenate([pid, ice_id])
-#         type = np.concatenate([type, ice_type])
-#         lats = np.concatenate([lats, ice_lat])
-#         lons = np.concatenate([lons, ice_lon])
-#         values = np.concatenate([values, ice_values])
-#         dates = dates + ice_dates
-#         deck = np.concatenate([deck, ice_deck])
-#
-#     # Grid up the data
-#     grid = gridder.Grid(2020, 10, pid, lats, lons, dates, values, type, climatology)
-#     grid.add_sampling_uncertainties(sampling_unc)
-#     grid.do_1x1_gridding()
-#     grid.do_one_step_5x5_gridding()
-#     bias_cov = grid.calculate_covariance(constant=constant, separates=separates)
-#
-#     if calc_deck_level_cov:
-#         deck_cov = grid.add_correlated_error(
-#             'deck',
-#             deck,
-#             0.2,
-#             exclusions=[
-#                 -1,  # ice
-#                 -2,  # buoys
-#             ]
-#         )
-#     else:
-#         deck_cov = np.zeros((2592, 2592))
-#
-#     if separates:
-#         return grid, bias_cov, deck_cov
-#
-#     return grid
-
 
 if __name__ == '__main__':
     data_dir = Path(os.getenv("OODIR"))  #
 
-    start_year = 1933
+    start_year = 1850
     end_year = 2005
     drifter_threshold = 500
 
@@ -495,7 +349,8 @@ if __name__ == '__main__':
         "ship", "ship_unc",
         "drifter", "drifter_unc",
         "interp", "interp_unc",
-        "interp2", "interp2_unc"
+        "interp2", "interp2_unc",
+        "interpok", "interpok_unc",
     ]
 
     mux = pd.MultiIndex.from_product([component_names, region_names])
@@ -514,6 +369,7 @@ if __name__ == '__main__':
         selection = ((df.snc.values == 1) & (df.sst.values >= -1.8))
 
         count += 1
+        time_series = pd.DataFrame(columns=mux)
         row = []
 
         basic_grid = IcoadsGridder(year, month, df, climatology, sampling_unc)
@@ -523,18 +379,27 @@ if __name__ == '__main__':
         basic_grid.print_stats()
 
         kernel = io.Kernel(0.6, 1300.0, 1.5)
-        interp = io.GPInterpolator(basic_grid.grid, kernel)
+        interp_ok = io.OKInterpolator(basic_grid.grid, kernel)
+        interp_ok.make_covariance()
+        interpolated_grid_ok = interp_ok.do_interpolation()
+        interpolated_grid_ok.data5[np.isnan(sampling_unc.sst.values[0:1, :, :])] = np.nan
 
+        #interpolated_grid_ok.plot_map_5x5()
+
+        kernel = io.Kernel(0.6, 1300.0, 1.5)
+        interp = io.GPInterpolator(basic_grid.grid, kernel)
         # build covariance
         interp.make_covariance(constant=0.5)
-        accumulated_spherical_cov = np.zeros((2592, 2592)) + 0.5 * 0.5
+        accumulated_spherical_cov = np.zeros((2592, 2592))
         for n in range(1, 4):
             for m in range(-1 * n, n):
                 sph_cov = interp.add_spherical_harmonics_to_covariance(n, m, 0.2)
                 accumulated_spherical_cov += sph_cov
-
         interpolated_grid = interp.do_interpolation()
         interpolated_grid.data5[np.isnan(sampling_unc.sst.values[0:1, :, :])] = np.nan
+
+        flat = interp.project_covariance(np.zeros((2592, 2592)) + 0.5 * 0.5)
+        flat.data5[np.isnan(sampling_unc.sst.values[0:1, :, :])] = np.nan
 
         spheroidal = interp.project_covariance(accumulated_spherical_cov)
         spheroidal.data5[np.isnan(sampling_unc.sst.values[0:1, :, :])] = np.nan
@@ -554,10 +419,8 @@ if __name__ == '__main__':
                 np.mean(value.data5[~np.isnan(value.data5)]),
                 np.mean(value.unc5[~np.isnan(value.unc5)])
             ]
-
         deck_bias_dict['year'] = year
         deck_bias_dict['month'] = month
-
         json_out_file = data_dir / "ICOADS" / "OutputData" / f"decks_{year}{month:02d}.json"
         with open(json_out_file, 'w') as f:
             json.dump(deck_bias_dict, f, sort_keys=True, indent=2)
@@ -609,7 +472,7 @@ if __name__ == '__main__':
             interpolated_grid1 = interp1.do_interpolation()
             interpolated_grid1.data5[np.isnan(sampling_unc.sst.values[0:1, :, :])] = np.nan
 
-            intermediate_ship_grid = ship_grid.grid - interpolated_grid1.grid
+            intermediate_ship_grid = ship_grid.grid - interpolated_grid1
 
             kernel = io.Kernel(0.6, 1300.0, 1.5)
             interp2 = io.GPInterpolator(intermediate_ship_grid, kernel)
@@ -632,6 +495,7 @@ if __name__ == '__main__':
             interpolated_grid2.data5[np.isnan(sampling_unc.sst.values[0:1, :, :])] = np.nan
 
         row = row + interpolated_grid2.calculate_regional_averages(regions, areas)
+        row = row + interpolated_grid_ok.calculate_regional_averages(regions, areas)
 
         interp2_data[count, :, :] = interpolated_grid2.data5[0, :, :]
         interp2_unc[count, :, :] = interpolated_grid2.unc5[0, :, :]
@@ -645,7 +509,8 @@ if __name__ == '__main__':
                 biases,
                 deck_biases,
                 spheroidal,
-                interpolated_grid2
+                flat,
+                interpolated_grid_ok
             ],
             [
                 f'{year}-{month:02d} Basic grid',
@@ -655,6 +520,7 @@ if __name__ == '__main__':
                 'Individual ship biases',
                 'Deck biases',
                 'Spherical Harmonics',
+                'Global mean',
                 'Interpolated grid adjusted',
             ],
             [
@@ -665,14 +531,15 @@ if __name__ == '__main__':
                 'anom',
                 'anom',
                 'anom',
+                'anom',
                 'anom'
             ],
             data_dir / "ICOADS" / "Figures" / f"four_up_{year}{month:02d}.png"
         )
 
         time_series.loc[count] = row
+        time_series.to_csv(data_dir / "ICOADS" / "OutputData" / f"timeseries_with_uncertainty_{year}{month:02d}.csv")
 
-    time_series.to_csv(data_dir / "ICOADS" / "OutputData" / "timeseries_with_uncertainty.csv")
 
     avships = time_series['ship']
     avships_unc = time_series['ship_unc']

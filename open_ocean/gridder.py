@@ -304,7 +304,7 @@ class Grid:
                 if np.sum(array[loy:hiy+1, lox:hix+1]) == 1:
                     self.data5[0, yy, xx] = np.nan
                     self.numobs5[0, yy, xx] = 0
-                    print("removed isolated ob")
+                    #print("removed isolated ob")
 
         triplearray = np.concatenate([self.data5[0, :, :] for _ in range(3)], axis=1)
         difference = np.full((36,72), np.nan)
@@ -319,7 +319,7 @@ class Grid:
                 if difference[yy,xx] > 4.0:
                     self.data5[0, yy, xx] = np.nan
                     self.numobs5[0, yy, xx] = 0
-                    print("zapped bullseye")
+                    #print("zapped bullseye")
 
         # plt.hist(difference[~np.isnan(difference)].flatten(), bins=100)
         # plt.show()

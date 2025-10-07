@@ -184,7 +184,6 @@ class IcoadsGridder:
             icoads_id = self.df.id.values[selection]
             pid[type == 7] = icoads_id[type == 7]
             pid[type == 6] = icoads_id[type == 6]
-
         else:
             pid = self.df.id.values[selection]
 
@@ -306,7 +305,8 @@ if __name__ == '__main__':
     data_dir = Path(os.getenv("OODIR"))  #
 
     start_year = 1850
-    end_year = 2005
+    end_year = 2025
+
     drifter_threshold = 500
 
     ts = []
@@ -317,31 +317,11 @@ if __name__ == '__main__':
         regions = json.load(f)
 
     climatology = xr.open_dataset(data_dir / "SST_CCI_climatology" / "SST_1x1_daily.nc")
+    variability = xr.open_dataset(data_dir / "SST_CCI" / "SST_Variability_5x5.nc")
     areas = convert_climatology_to_ocean_areas(climatology)
     sampling_unc = xr.open_dataset(data_dir / "IQUAM" / "OutputData" / "sampling_uncertainty.nc")
     ice = xr.open_dataset(data_dir / "IQUAM" / "InputData" / "HadISST.2.2.0.0_sea_ice_concentration.nc",
                           engine='netcdf4')
-
-    n_time = (end_year - start_year + 1) * 12
-
-    all_data = np.zeros((n_time, 36, 72)) + np.nan
-    all_nobs = np.zeros((n_time, 36, 72))
-    all_unc = np.zeros((n_time, 36, 72)) + np.nan
-    all_interpolate = np.zeros((n_time, 36, 72)) + np.nan
-
-    ship_data = np.zeros((n_time, 36, 72)) + np.nan
-    ship_nobs = np.zeros((n_time, 36, 72))
-    ship_unc = np.zeros((n_time, 36, 72)) + np.nan
-
-    drifter_data = np.zeros((n_time, 36, 72)) + np.nan
-    drifter_nobs = np.zeros((n_time, 36, 72))
-    drifter_unc = np.zeros((n_time, 36, 72)) + np.nan
-
-    interp_data = np.zeros((n_time, 36, 72)) + np.nan
-    interp_unc = np.zeros((n_time, 36, 72)) + np.nan
-
-    interp2_data = np.zeros((n_time, 36, 72)) + np.nan
-    interp2_unc = np.zeros((n_time, 36, 72)) + np.nan
 
     region_names = [key for key in regions.keys()]
     component_names = [
@@ -361,6 +341,7 @@ if __name__ == '__main__':
     for year, month in product(range(start_year, end_year + 1), range(1, 13)):
         print(year, month)
         iceym = ice.sel(time=f"{year}-{month:02d}-15", method="nearest")
+        varym = variability.sst[month-1].values.flatten()
 
         file = data_dir / "ICOADS" / f"icoads_{year}{month:02d}.csv"
 
@@ -378,18 +359,17 @@ if __name__ == '__main__':
         row = row + basic_grid.calculate_regional_averages(regions, areas)
         basic_grid.print_stats()
 
-        kernel = io.Kernel(0.6, 1300.0, 1.5)
+        kernel = io.Kernel(varym, 1300.0, 1.5)
         interp_ok = io.OKInterpolator(basic_grid.grid, kernel)
         interp_ok.make_covariance()
         interpolated_grid_ok = interp_ok.do_interpolation()
         interpolated_grid_ok.data5[np.isnan(sampling_unc.sst.values[0:1, :, :])] = np.nan
 
-        #interpolated_grid_ok.plot_map_5x5()
-
-        kernel = io.Kernel(0.6, 1300.0, 1.5)
-        interp = io.GPInterpolator(basic_grid.grid, kernel)
+        kernel = io.Kernel(varym, 1300.0, 1.5)
+        interp = io.OKInterpolator(basic_grid.grid, kernel)
         # build covariance
-        interp.make_covariance(constant=0.5)
+        interp.make_covariance()
+        kernel_cov = interp.cov
         accumulated_spherical_cov = np.zeros((2592, 2592))
         for n in range(1, 4):
             for m in range(-1 * n, n):
@@ -398,8 +378,12 @@ if __name__ == '__main__':
         interpolated_grid = interp.do_interpolation()
         interpolated_grid.data5[np.isnan(sampling_unc.sst.values[0:1, :, :])] = np.nan
 
+        local = interp.project_covariance(kernel_cov)
+        local.data5[np.isnan(sampling_unc.sst.values[0:1, :, :])] = np.nan
+
         flat = interp.project_covariance(np.zeros((2592, 2592)) + 0.5 * 0.5)
         flat.data5[np.isnan(sampling_unc.sst.values[0:1, :, :])] = np.nan
+        flat.data5[~np.isnan(sampling_unc.sst.values[0:1, :, :])] = interp.beta
 
         spheroidal = interp.project_covariance(accumulated_spherical_cov)
         spheroidal.data5[np.isnan(sampling_unc.sst.values[0:1, :, :])] = np.nan
@@ -425,21 +409,12 @@ if __name__ == '__main__':
         with open(json_out_file, 'w') as f:
             json.dump(deck_bias_dict, f, sort_keys=True, indent=2)
 
-        all_data[count, :, :] = basic_grid.grid.data5[0, :, :]
-        all_interpolate[count, :, :] = interpolated_grid.data5[0, :, :]
-        all_nobs[count, :, :] = basic_grid.grid.numobs5[0, :, :]
-        all_unc[count, :, :] = basic_grid.grid.unc5[0, :, :]
-
         # Just ships
         selection = (df.snc.values == 1) & (df.pt.values != 6) & (df.pt.values != 7)
         ship_grid = IcoadsGridder(year, month, df, climatology, sampling_unc)
         ship_grid.make_selection(selection)
         ship_grid.grid_selection(constant=0.2, calc_deck_level_cov=True)
         row = row + ship_grid.calculate_regional_averages(regions, areas)
-
-        ship_data[count, :, :] = ship_grid.grid.data5[0, :, :]
-        ship_nobs[count, :, :] = ship_grid.grid.numobs5[0, :, :]
-        ship_unc[count, :, :] = ship_grid.grid.unc5[0, :, :]
 
         # Just drifters and moorings
         selection = (df.snc.values == 1) & ((df.pt.values == 7) | (df.pt.values == 6))
@@ -448,23 +423,16 @@ if __name__ == '__main__':
         drifter_grid.grid_selection(constant=0.0, calc_deck_level_cov=False)
         row = row + drifter_grid.calculate_regional_averages(regions, areas)
 
-        drifter_data[count, :, :] = drifter_grid.grid.data5[0, :, :]
-        drifter_nobs[count, :, :] = drifter_grid.grid.numobs5[0, :, :]
-        drifter_unc[count, :, :] = drifter_grid.grid.unc5[0, :, :]
-
         row = row + interpolated_grid.calculate_regional_averages(regions, areas)
-
-        interp_data[count, :, :] = interpolated_grid.data5[0, :, :]
-        interp_unc[count, :, :] = interpolated_grid.unc5[0, :, :]
 
         # Do 2-step reconstruction
         drifter_cell_count = np.count_nonzero(drifter_grid.grid.numobs5)
 
         if drifter_cell_count > drifter_threshold:
             # Do some interpolation stuff here
-            kernel = io.Kernel(0.6, 1300.0, 1.5)
-            interp1 = io.GPInterpolator(drifter_grid.grid, kernel)
-            interp1.make_covariance(constant=0.5)
+            kernel = io.Kernel(varym, 1300.0, 1.5)
+            interp1 = io.OKInterpolator(drifter_grid.grid, kernel)
+            interp1.make_covariance()
             for n in range(1, 4):
                 for m in range(-1 * n, n):
                     interp1.add_spherical_harmonics_to_covariance(n, m, 0.2)
@@ -474,8 +442,8 @@ if __name__ == '__main__':
 
             intermediate_ship_grid = ship_grid.grid - interpolated_grid1
 
-            kernel = io.Kernel(0.6, 1300.0, 1.5)
-            interp2 = io.GPInterpolator(intermediate_ship_grid, kernel)
+            kernel = io.Kernel(varym, 1300.0, 1.5)
+            interp2 = io.GPInterpolator(intermediate_ship_grid, kernel) # GP for second step as we have zero mean
 
             interp2.replace_covariance(interp1.posterior)
             interpolated_grid2 = interp2.do_interpolation()
@@ -484,9 +452,9 @@ if __name__ == '__main__':
             interpolated_grid2 = interpolated_grid2 + interpolated_grid1
 
         else:
-            kernel = io.Kernel(0.6, 1300.0, 1.5)
-            interp2 = io.GPInterpolator(ship_grid.grid, kernel)
-            interp2.make_covariance(constant=0.5)
+            kernel = io.Kernel(varym, 1300.0, 1.5)
+            interp2 = io.OKInterpolator(ship_grid.grid, kernel)
+            interp2.make_covariance()
             for n in range(1, 4):
                 for m in range(-1 * n, n):
                     interp2.add_spherical_harmonics_to_covariance(n, m, 0.2)
@@ -497,142 +465,36 @@ if __name__ == '__main__':
         row = row + interpolated_grid2.calculate_regional_averages(regions, areas)
         row = row + interpolated_grid_ok.calculate_regional_averages(regions, areas)
 
-        interp2_data[count, :, :] = interpolated_grid2.data5[0, :, :]
-        interp2_unc[count, :, :] = interpolated_grid2.unc5[0, :, :]
-
         plot_more_up(
-            [
-                basic_grid.grid,
-                basic_grid.grid,
-                basic_grid.grid,
-                interpolated_grid,
-                biases,
-                deck_biases,
-                spheroidal,
-                flat,
-                interpolated_grid_ok
-            ],
-            [
-                f'{year}-{month:02d} Basic grid',
-                'uncertainty',
-                'numobs',
-                'Interpolated grid',
-                'Individual ship biases',
-                'Deck biases',
-                'Spherical Harmonics',
-                'Global mean',
-                'Interpolated grid adjusted',
-            ],
-            [
-                'anom',
-                'unc',
-                'numobs',
-                'anom',
-                'anom',
-                'anom',
-                'anom',
-                'anom',
-                'anom'
-            ],
+            [basic_grid.grid, basic_grid.grid, basic_grid.grid, interpolated_grid, biases, deck_biases,
+             spheroidal, flat, local],
+            [f'{year}-{month:02d} Basic grid', 'uncertainty', 'numobs', 'Interpolated grid',
+             'Individual ship biases', 'Deck biases', 'Spherical Harmonics', 'Global mean',
+             'Local', ],
+            ['anom', 'unc', 'numobs', 'anom', 'anom', 'anom', 'anom', 'anom', 'anom'],
             data_dir / "ICOADS" / "Figures" / f"four_up_{year}{month:02d}.png"
         )
 
         time_series.loc[count] = row
         time_series.to_csv(data_dir / "ICOADS" / "OutputData" / f"timeseries_with_uncertainty_{year}{month:02d}.csv")
 
+        # Transfer the data to xarray DataArrays and write out
+        date_range = pd.date_range(start=f'{year}-{month:02d}-01', freq='1MS', periods=1)
+        tdir = data_dir / "ICOADS" / "OutputData"
+        tags = ['', '_ship', '_drifter', '_interp', '_interp_adjusted', '_interp_ok']
+        for i, g in enumerate([
+            basic_grid.grid,
+            ship_grid.grid,
+            drifter_grid.grid,
+            interpolated_grid,
+            interpolated_grid2,
+            interpolated_grid_ok,
+        ]):
+            oo_anomalies = gridder.Grid.make_xarray(g.data5, res=5, times=date_range)
+            oo_anomalies.to_netcdf(tdir / f"oo_anomalies{tags[i]}_{year}{month:02d}.nc")
 
-    avships = time_series['ship']
-    avships_unc = time_series['ship_unc']
-    plt.fill_between(
-        time, avships['Global'] + 2 * avships_unc['Global'], avships['Global'] - 2 * avships_unc['Global'],
-        label="Ships", color="blue", alpha=0.5
-    )
+            oo_uncertainty = gridder.Grid.make_xarray(g.unc5, res=5, times=date_range)
+            oo_uncertainty.to_netcdf(tdir / f"oo_uncertainty{tags[i]}_{year}{month:02d}.nc")
 
-    avdrifters = time_series['drifter']
-    avdrifters_unc = time_series['drifter_unc']
-    plt.fill_between(
-        time, avdrifters['Global'] + 2 * avdrifters_unc['Global'],
-              avdrifters['Global'] - 2 * avdrifters_unc['Global'], label="Drifters", color="orange", alpha=0.5
-    )
-
-    avinterp = time_series['interp']
-    avinterp_unc = time_series['interp_unc']
-    plt.fill_between(
-        time, avinterp['Global'] + 2 * avinterp_unc['Global'], avinterp['Global'] - 2 * avinterp_unc['Global'],
-        label="Interpolated", color="red", alpha=0.5
-    )
-
-    avinterp2 = time_series['interp2']
-    avinterp2_unc = time_series['interp2_unc']
-    plt.fill_between(
-        time, avinterp2['Global'] + 2 * avinterp2_unc['Global'], avinterp2['Global'] - 2 * avinterp2_unc['Global'],
-        label="Interpolated 2", color="green", alpha=0.5
-    )
-
-    plt.xlim(start_year - 1, end_year + 1)
-    plt.ylim(-1.65, 0.75)
-    plt.gcf().set_size_inches(42, 10)
-    plt.legend()
-    plt.savefig(data_dir / "ICOADS" / "Figures" / "timeseries_with_uncertainty.png")
-
-    time_series.to_csv(data_dir / "ICOADS" / "OutputData" / "timeseries_with_uncertainty.csv")
-
-    # Transfer the data to xarray DataArrays and write out
-    all_data = all_data[0:count + 1, :, :]
-    all_interpolate = all_interpolate[0:count + 1, :, :]
-    all_unc = all_unc[0:count + 1, :, :]
-    all_nobs = all_nobs[0:count + 1, :, :]
-
-    ship_data = ship_data[0:count + 1, :, :]
-    ship_unc = ship_unc[0:count + 1, :, :]
-    ship_nobs = ship_nobs[0:count + 1, :, :]
-
-    drifter_data = drifter_data[0:count + 1, :, :]
-    drifter_unc = drifter_unc[0:count + 1, :, :]
-    drifter_nobs = drifter_nobs[0:count + 1, :, :]
-
-    interp_data = interp_data[0:count + 1, :, :]
-    interp_unc = interp_unc[0:count + 1, :, :]
-
-    interp2_data = interp2_data[0:count + 1, :, :]
-    interp2_unc = interp2_unc[0:count + 1, :, :]
-
-    date_range = pd.date_range(start=f'1850-01-01', freq='1MS', periods=count + 1)
-
-    oo_anomalies = gridder.Grid.make_xarray(all_data, res=5, times=date_range)
-    oo_interpolated = gridder.Grid.make_xarray(all_interpolate, res=5, times=date_range)
-    oo_uncertainty = gridder.Grid.make_xarray(all_unc, res=5, times=date_range)
-    oo_numobs = gridder.Grid.make_xarray(all_nobs, res=5, times=date_range)
-
-    oo_anomalies.to_netcdf(data_dir / "ICOADS" / "OutputData" / "oo_anomalies.nc")
-    oo_interpolated.to_netcdf(data_dir / "ICOADS" / "OutputData" / "oo_interpolated.nc")
-    oo_uncertainty.to_netcdf(data_dir / "ICOADS" / "OutputData" / "oo_uncertainty.nc")
-    oo_numobs.to_netcdf(data_dir / "ICOADS" / "OutputData" / "oo_numobs.nc")
-
-    oo_anomalies = gridder.Grid.make_xarray(ship_data, res=5, times=date_range)
-    oo_uncertainty = gridder.Grid.make_xarray(ship_unc, res=5, times=date_range)
-    oo_numobs = gridder.Grid.make_xarray(ship_nobs, res=5, times=date_range)
-
-    oo_anomalies.to_netcdf(data_dir / "ICOADS" / "OutputData" / "oo_anomalies_ship.nc")
-    oo_uncertainty.to_netcdf(data_dir / "ICOADS" / "OutputData" / "oo_uncertainty_ship.nc")
-    oo_numobs.to_netcdf(data_dir / "ICOADS" / "OutputData" / "oo_numobs_ship.nc")
-
-    oo_anomalies = gridder.Grid.make_xarray(drifter_data, res=5, times=date_range)
-    oo_uncertainty = gridder.Grid.make_xarray(drifter_unc, res=5, times=date_range)
-    oo_numobs = gridder.Grid.make_xarray(drifter_nobs, res=5, times=date_range)
-
-    oo_anomalies.to_netcdf(data_dir / "ICOADS" / "OutputData" / "oo_anomalies_drifter.nc")
-    oo_uncertainty.to_netcdf(data_dir / "ICOADS" / "OutputData" / "oo_uncertainty_drifter.nc")
-    oo_numobs.to_netcdf(data_dir / "ICOADS" / "OutputData" / "oo_numobs_drifter.nc")
-
-    oo_anomalies = gridder.Grid.make_xarray(interp_data, res=5, times=date_range)
-    oo_uncertainty = gridder.Grid.make_xarray(interp_unc, res=5, times=date_range)
-
-    oo_anomalies.to_netcdf(data_dir / "ICOADS" / "OutputData" / "oo_anomalies_interp.nc")
-    oo_uncertainty.to_netcdf(data_dir / "ICOADS" / "OutputData" / "oo_uncertainty_interp.nc")
-
-    oo_anomalies = gridder.Grid.make_xarray(interp2_data, res=5, times=date_range)
-    oo_uncertainty = gridder.Grid.make_xarray(interp2_unc, res=5, times=date_range)
-
-    oo_anomalies.to_netcdf(data_dir / "ICOADS" / "OutputData" / "oo_anomalies_interp_adjusted.nc")
-    oo_uncertainty.to_netcdf(data_dir / "ICOADS" / "OutputData" / "oo_uncertainty_interp_adjusted.nc")
+            oo_numobs = gridder.Grid.make_xarray(g.numobs5, res=5, times=date_range)
+            oo_numobs.to_netcdf(tdir / f"oo_numobs{tags[i]}_{year}{month:02d}.nc")

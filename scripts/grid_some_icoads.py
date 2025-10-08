@@ -227,6 +227,23 @@ class IcoadsGridder:
         values[deck == 118] = values[deck == 118] + 0.45
         values[deck == 119] = values[deck == 119] + 0.45
 
+        if self.year > 2009:
+            arctic_buoy_list=[]
+            with open('arctic_buoy_list.txt', 'r', encoding='utf-8-sig') as f:
+                for line in f:
+                    arctic_buoy_list.append(line.rstrip().lstrip())
+            arctic_buoy_list = set(arctic_buoy_list)
+
+            good_ids = ~np.isin(pid, arctic_buoy_list)
+            pid = pid[good_ids]
+            type = type[good_ids]
+            lats = lats[good_ids]
+            lons = lons[good_ids]
+            values = values[good_ids]
+            months = months[good_ids]
+            days = days[good_ids]
+            deck = deck[good_ids]
+
         # Convert dates
         dates = convert_dates(months.astype(int), days.astype(int))
 
@@ -373,7 +390,7 @@ if __name__ == '__main__':
         accumulated_spherical_cov = np.zeros((2592, 2592))
         for n in range(1, 4):
             for m in range(-1 * n, n):
-                sph_cov = interp.add_spherical_harmonics_to_covariance(n, m, 0.2)
+                sph_cov = interp.add_spherical_harmonics_to_covariance(n, m, 0.025)
                 accumulated_spherical_cov += sph_cov
         interpolated_grid = interp.do_interpolation()
         interpolated_grid.data5[np.isnan(sampling_unc.sst.values[0:1, :, :])] = np.nan
@@ -435,7 +452,7 @@ if __name__ == '__main__':
             interp1.make_covariance()
             for n in range(1, 4):
                 for m in range(-1 * n, n):
-                    interp1.add_spherical_harmonics_to_covariance(n, m, 0.2)
+                    interp1.add_spherical_harmonics_to_covariance(n, m, 0.025)
 
             interpolated_grid1 = interp1.do_interpolation()
             interpolated_grid1.data5[np.isnan(sampling_unc.sst.values[0:1, :, :])] = np.nan
@@ -457,7 +474,7 @@ if __name__ == '__main__':
             interp2.make_covariance()
             for n in range(1, 4):
                 for m in range(-1 * n, n):
-                    interp2.add_spherical_harmonics_to_covariance(n, m, 0.2)
+                    interp2.add_spherical_harmonics_to_covariance(n, m, 0.025)
 
             interpolated_grid2 = interp2.do_interpolation()
             interpolated_grid2.data5[np.isnan(sampling_unc.sst.values[0:1, :, :])] = np.nan

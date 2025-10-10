@@ -106,6 +106,16 @@ class Grid:
         outgrid.data5 = self.data5 + other.data5
         return outgrid
 
+    def __mul__(self, other):
+        outgrid = copy.deepcopy(self)
+        if isinstance(other, float):
+            outgrid.data5 = self.data5 * other
+        elif isinstance(other, Grid):
+            outgrid.data5 = self.data5 * other.data5
+        elif isinstance(other, np.ndarray):
+            outgrid.data5 = self.data5 * other
+        return outgrid
+
     def add_sampling_uncertainties(self, sampling_unc=None):
         if sampling_unc is None:
             self.sigma_s = np.zeros((36, 72))

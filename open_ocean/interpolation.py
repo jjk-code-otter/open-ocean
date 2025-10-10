@@ -19,6 +19,18 @@ import numpy as np
 from scipy.special import gamma, kv, sph_harm_y
 
 
+def convert_lat_lon_to_euclidean(lat, lon):
+    earth_radius = 6371
+    lat = lat * np.pi / 180
+    lon = lon * np.pi / 180
+
+    x = earth_radius * np.cos(lat) * np.cos(lon)
+    y = earth_radius * np.cos(lat) * np.sin(lon)
+    z = earth_radius * np.sin(lat)
+
+    return x, y, z
+
+
 class Kernel:
 
     def __init__(self, variance, length_scale, shape):
@@ -59,29 +71,62 @@ class Kernel:
         C[distances==0] = self.variance*self.variance
         return C
 
+class KalmanInterpolator:
+
+    def __init__(self):
+        self.running_mean = None
+        self.running_cov = None
+
+    def update(self, grid, variances, innovations, constant, innovation_constant, autocorr):
+
+        if self.running_mean is None:
+            kernel = Kernel(variances, 1300.0, 1.5)
+            interpolator = GPInterpolator(grid, kernel)
+            interpolator.make_covariance(constant=constant)
+
+            interpolated_grid = interpolator.do_interpolation()
+
+            self.running_mean = interpolated_grid * autocorr
+            ft = np.diag(autocorr.flatten())
+            self.running_cov = np.matmul(np.matmul(ft, interpolator.posterior), ft.transpose())
+            del ft
+
+        else:
+            kernel = Kernel(innovations, 1300.0, 1.5)
+            update_grid = grid - self.running_mean
+            interpolator = GPInterpolator(update_grid, kernel)
+            interpolator.make_covariance(constant=innovation_constant)
+
+            cov_update = self.running_cov + interpolator.cov
+            interpolator.replace_covariance(cov_update)
+
+            interpolated_grid = interpolator.do_interpolation()
+            interpolated_grid = interpolated_grid + self.running_mean
+
+            self.running_mean = interpolated_grid * autocorr
+            ft = np.diag(autocorr.flatten())
+            self.running_cov = np.matmul(np.matmul(ft, interpolator.posterior), ft.transpose())
+            del ft
+
+        return interpolated_grid
+
 
 class OKInterpolator:
 
-    def __init__(self, grid, kernel):
+    def __init__(self, grid, kernel, basis=None):
         self.grid = grid
         self.kernel = kernel
-        self.basis = np.full((1, 2592), 1.0)
+        if basis is None:
+            self.basis = np.full((1, 2592), 1.0)
+        else:
+            self.basis = np.full((1+len(basis), 2592), 1.0)
+            for i in range(len(basis)):
+                self.basis[i+1, :] = basis[i][:]
+
         self.cov = None
         self.posterior = None
         self.kriginv = None
         self.beta = None
-
-    @staticmethod
-    def convert_lat_lon_to_euclidean(lat, lon):
-        earth_radius = 6371
-        lat = lat * np.pi / 180
-        lon = lon * np.pi / 180
-
-        x = earth_radius * np.cos(lat) * np.cos(lon)
-        y = earth_radius * np.cos(lat) * np.sin(lon)
-        z = earth_radius * np.sin(lat)
-
-        return x, y, z
 
     def replace_covariance(self, input_covariance):
         """Replace the current covariance with a completely new one"""
@@ -126,7 +171,7 @@ class OKInterpolator:
         latitudes = self.grid.get_latitudes().flatten()
         longitudes = self.grid.get_longitudes().flatten()
 
-        x, y, z = self.convert_lat_lon_to_euclidean(latitudes, longitudes)
+        x, y, z = convert_lat_lon_to_euclidean(latitudes, longitudes)
 
         z = z * 3.0
 
@@ -178,7 +223,10 @@ class OKInterpolator:
         betainv = np.linalg.inv(beta)
         beta = np.matmul(np.matmul(betainv, bhtinv), hobs)
 
-        self.beta = beta.item()
+        try:
+            self.beta = beta.item()
+        except:
+            self.beta = beta
 
         mu = mu + np.matmul(g.transpose(), beta)
 
@@ -259,17 +307,6 @@ class GPInterpolator:
         self.posterior = None
         self.kriginv = None
 
-    @staticmethod
-    def convert_lat_lon_to_euclidean(lat, lon):
-        earth_radius = 6371
-        lat = lat * np.pi / 180
-        lon = lon * np.pi / 180
-
-        x = earth_radius * np.cos(lat) * np.cos(lon)
-        y = earth_radius * np.cos(lat) * np.sin(lon)
-        z = earth_radius * np.sin(lat)
-
-        return x, y, z
 
     def replace_covariance(self, input_covariance):
         """Replace the current covariance with a completely new one"""
@@ -314,7 +351,7 @@ class GPInterpolator:
         latitudes = self.grid.get_latitudes().flatten()
         longitudes = self.grid.get_longitudes().flatten()
 
-        x, y, z = self.convert_lat_lon_to_euclidean(latitudes, longitudes)
+        x, y, z = convert_lat_lon_to_euclidean(latitudes, longitudes)
 
         z = z * 3.0
 

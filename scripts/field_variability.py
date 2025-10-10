@@ -43,6 +43,18 @@ def plot_map(ax, ds):
 
 data_dir = Path(os.getenv("OODIR"))
 
+oni = []
+with open(data_dir / "SST_CCI" / "RONI.ascii.txt", "r") as f:
+    f.readline()
+    for line in f:
+        columns = line.strip().split()
+        oni.append(float(columns[2]))
+oni_time = pd.date_range(start='1950-01-01', freq='1MS', periods=len(oni))
+oni = np.array(oni)
+selection = (oni_time.year >= 1980)
+oni = oni[selection]
+
+
 filepath = data_dir / 'SST_CCI' / 'SST_ANOM_100_19800101_20250630_regridded'
 files = filepath.glob('*.nc')
 sst_cci = xr.open_mfdataset(files)
@@ -50,11 +62,93 @@ sst_cci = xr.open_mfdataset(files)
 ltm = sst_cci.sst_anomaly.groupby("time.month").mean()
 ltstdev = sst_cci.sst_anomaly.groupby("time.month").std()
 
+ntime = sst_cci.sst_anomaly.values.shape[0]
+five_grid = np.zeros((ntime, 36, 72))
+big_grid = copy.deepcopy(sst_cci.sst_anomaly.values) # Force load of data
+for yy, xx in itertools.product(range(36), range(72)):
+    selection = big_grid[:, yy * 5:(yy + 1) * 5, xx * 5:(xx + 1) * 5]
+    selection = selection.reshape((ntime, 25))
+    sel = ~np.isnan(selection[0,:])
+    selection = selection[:, sel]
+    five_grid[:, yy, xx] = np.mean(selection, axis=1)
+
+correlation = np.zeros((36, 72))
+innovation = np.zeros((36, 72))
+enso = np.zeros((36, 72))
+for xx, yy in itertools.product(range(72), range(36)):
+    print(xx,yy)
+    array1 = five_grid[0:-2,yy,xx]
+    array2 = five_grid[1:-1,yy,xx]
+    correlation[yy,xx] = np.corrcoef(array1, array2)[0,1]
+    enso[yy, xx] = np.corrcoef(five_grid[:,yy,xx], oni[:])[0,1]
+    innovation[yy,xx] = np.std(array1-array2)
+
+five_grid = Grid.make_xarray(
+    np.reshape(enso, (1,36,72)),
+    res=5,
+    times=pd.date_range(start='1981-01-15', freq='1MS', periods=1)
+)
+
+longitude = five_grid.longitude
+latitude = five_grid.latitude
+
+fig, axes = plt.subplots(nrows=1, ncols=1, figsize=(16, 9), subplot_kw=dict(projection=ccrs.PlateCarree()))
+plt.subplots_adjust(wspace=0, hspace=0)
+axes.coastlines(lw=1, color='black')
+x = axes.pcolormesh(longitude, latitude, correlation, vmin=0.0, vmax=1.0, cmap='inferno')
+fig.colorbar(x)
+axes.text(-175, 77, "ENSO Correlation", color='white')
+plt.savefig(data_dir / "SST_CCI" / "enso_correlation_5x5.png")
+
+five_grid.to_netcdf(data_dir / "SST_CCI" / "SST_ENSOCorrelation_5x5.nc")
+
+
+five_grid = Grid.make_xarray(
+    np.reshape(correlation, (1,36,72)),
+    res=5,
+    times=pd.date_range(start='1981-01-15', freq='1MS', periods=1)
+)
+
+longitude = five_grid.longitude
+latitude = five_grid.latitude
+
+fig, axes = plt.subplots(nrows=1, ncols=1, figsize=(16, 9), subplot_kw=dict(projection=ccrs.PlateCarree()))
+plt.subplots_adjust(wspace=0, hspace=0)
+axes.coastlines(lw=1, color='black')
+x = axes.pcolormesh(longitude, latitude, correlation, vmin=0.0, vmax=1.0, cmap='inferno')
+fig.colorbar(x)
+axes.text(-175, 77, "Correlation", color='white')
+plt.savefig(data_dir / "SST_CCI" / "correlation_5x5.png")
+
+five_grid.to_netcdf(data_dir / "SST_CCI" / "SST_AutoCorrelation_5x5.nc")
+
+five_grid = Grid.make_xarray(
+    np.reshape(innovation, (1,36,72)),
+    res=5,
+    times=pd.date_range(start='1981-01-15', freq='1MS', periods=1)
+)
+
+longitude = five_grid.longitude
+latitude = five_grid.latitude
+
+fig, axes = plt.subplots(nrows=1, ncols=1, figsize=(16, 9), subplot_kw=dict(projection=ccrs.PlateCarree()))
+plt.subplots_adjust(wspace=0, hspace=0)
+axes.coastlines(lw=1, color='black')
+x = axes.pcolormesh(longitude, latitude, innovation, vmin=0.0, vmax=1.0, cmap='inferno')
+fig.colorbar(x)
+axes.text(-175, 77, "Innovation standard deviation", color='white')
+plt.savefig(data_dir / "SST_CCI" / "innovation_5x5.png")
+
+five_grid.to_netcdf(data_dir / "SST_CCI" / "SST_InnovationStdev_5x5.nc")
+
+
 longitude = ltm.lon
 latitude = ltm.lat
 
 month = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November',
          'December']
+
+
 
 fig, axes = plt.subplots(nrows=3, ncols=4, figsize=(16, 9), subplot_kw=dict(projection=ccrs.PlateCarree()))
 plt.subplots_adjust(wspace=0, hspace=0)

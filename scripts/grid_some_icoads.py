@@ -81,7 +81,7 @@ def plot_more_up(grid_list, titles, types, filename):
         nrows = 3
         ncols = 3
     if ngrids > 9:
-        nrows = 4
+        nrows = 3
         ncols = 4
 
     fig, axes = plt.subplots(nrows=nrows, ncols=ncols, figsize=(16, 9), subplot_kw=dict(projection=ccrs.PlateCarree()))
@@ -187,6 +187,13 @@ class IcoadsGridder:
         else:
             pid = self.df.id.values[selection]
 
+        # Sometimes the ID isn't available
+        for i in range(len(pid)):
+            if isinstance(pid[i], str):
+                continue
+            if np.isnan(pid[i]):
+                pid[i] = 'MISSING'
+
         # Drifters and moorings don't have deck biases
         deck[type == 7] = -2
         deck[type == 6] = -2
@@ -228,7 +235,7 @@ class IcoadsGridder:
         values[deck == 119] = values[deck == 119] + 0.45
 
         if self.year > 2009:
-            arctic_buoy_list=[]
+            arctic_buoy_list = []
             with open('arctic_buoy_list.txt', 'r', encoding='utf-8-sig') as f:
                 for line in f:
                     arctic_buoy_list.append(line.rstrip().lstrip())
@@ -325,6 +332,7 @@ if __name__ == '__main__':
     end_year = 2025
 
     drifter_threshold = 500
+    update_rate = 0.5
 
     ts = []
     ts_unc = []
@@ -337,6 +345,23 @@ if __name__ == '__main__':
     variability = xr.open_dataset(data_dir / "SST_CCI" / "SST_Variability_5x5.nc")
     areas = convert_climatology_to_ocean_areas(climatology)
     sampling_unc = xr.open_dataset(data_dir / "IQUAM" / "OutputData" / "sampling_uncertainty.nc")
+
+    enso = xr.open_dataset(data_dir / "SST_CCI" / "SST_ENSOCorrelation_5x5.nc")
+    enso = enso.sst.values.flatten()
+    enso[np.isnan(enso)] = 0.5
+    enso = enso - np.min(enso)
+    enso = enso / np.max(enso)
+    enso = enso - np.mean(enso)
+
+    autocorr = xr.open_dataset(data_dir / "SST_CCI" / "SST_AutoCorrelation_5x5.nc")
+    autocorr.sst.values[np.isnan(autocorr.sst.values)] = 0.0
+    autocorr = autocorr.sst.values
+    autocorr_flat = autocorr.flatten()
+
+    innovation = xr.open_dataset(data_dir / "SST_CCI" / "SST_InnovationStdev_5x5.nc")
+    innovation.sst.values[np.isnan(innovation.sst.values)] = 0.6
+    innovation_flat = innovation.sst.values.flatten()
+
     ice = xr.open_dataset(data_dir / "IQUAM" / "InputData" / "HadISST.2.2.0.0_sea_ice_concentration.nc",
                           engine='netcdf4')
 
@@ -348,6 +373,7 @@ if __name__ == '__main__':
         "interp", "interp_unc",
         "interp2", "interp2_unc",
         "interpok", "interpok_unc",
+        "interp_run", "interp_run_unc",
     ]
 
     mux = pd.MultiIndex.from_product([component_names, region_names])
@@ -355,16 +381,21 @@ if __name__ == '__main__':
 
     count = -1
 
+    running_cov = None
+    running_mean = None
+    kalman = io.KalmanInterpolator()
+
     for year, month in product(range(start_year, end_year + 1), range(1, 13)):
         print(year, month)
+
         iceym = ice.sel(time=f"{year}-{month:02d}-15", method="nearest")
-        varym = variability.sst[month-1].values.flatten()
+        varym = variability.sst[month - 1].values.flatten()
 
         file = data_dir / "ICOADS" / f"icoads_{year}{month:02d}.csv"
 
         df = pd.read_csv(file)
 
-        selection = ((df.snc.values == 1) & (df.sst.values >= -1.8))
+        selection = ((df.snc.values == 1) & (df.sst.values >= -3.3))  # -3.3 = -1.8 minus one sigma uncertainty approx
 
         count += 1
         time_series = pd.DataFrame(columns=mux)
@@ -382,8 +413,9 @@ if __name__ == '__main__':
         interpolated_grid_ok = interp_ok.do_interpolation()
         interpolated_grid_ok.data5[np.isnan(sampling_unc.sst.values[0:1, :, :])] = np.nan
 
+        # Do the fancy interpolation
         kernel = io.Kernel(varym, 1300.0, 1.5)
-        interp = io.OKInterpolator(basic_grid.grid, kernel)
+        interp = io.OKInterpolator(basic_grid.grid, kernel, basis=[enso])
         # build covariance
         interp.make_covariance()
         kernel_cov = interp.cov
@@ -400,7 +432,11 @@ if __name__ == '__main__':
 
         flat = interp.project_covariance(np.zeros((2592, 2592)) + 0.5 * 0.5)
         flat.data5[np.isnan(sampling_unc.sst.values[0:1, :, :])] = np.nan
-        flat.data5[~np.isnan(sampling_unc.sst.values[0:1, :, :])] = interp.beta
+        flat.data5[~np.isnan(sampling_unc.sst.values[0:1, :, :])] = interp.beta[0]
+
+        basis1 = copy.deepcopy(flat)
+        basis1.data5[:] = interp.beta[1].item() * np.reshape(enso, (1, 36, 72))
+        basis1.data5[np.isnan(sampling_unc.sst.values[0:1, :, :])] = np.nan
 
         spheroidal = interp.project_covariance(accumulated_spherical_cov)
         spheroidal.data5[np.isnan(sampling_unc.sst.values[0:1, :, :])] = np.nan
@@ -427,14 +463,14 @@ if __name__ == '__main__':
             json.dump(deck_bias_dict, f, sort_keys=True, indent=2)
 
         # Just ships
-        selection = (df.snc.values == 1) & (df.pt.values != 6) & (df.pt.values != 7)
+        selection = (df.snc.values == 1) & (df.pt.values != 6) & (df.pt.values != 7) & (df.sst.values >= -3.3)
         ship_grid = IcoadsGridder(year, month, df, climatology, sampling_unc)
         ship_grid.make_selection(selection)
         ship_grid.grid_selection(constant=0.2, calc_deck_level_cov=True)
         row = row + ship_grid.calculate_regional_averages(regions, areas)
 
         # Just drifters and moorings
-        selection = (df.snc.values == 1) & ((df.pt.values == 7) | (df.pt.values == 6))
+        selection = (df.snc.values == 1) & ((df.pt.values == 7) | (df.pt.values == 6)) & (df.sst.values >= -3.3)
         drifter_grid = IcoadsGridder(year, month, df, climatology, sampling_unc)
         drifter_grid.make_selection(selection)
         drifter_grid.grid_selection(constant=0.0, calc_deck_level_cov=False)
@@ -460,7 +496,7 @@ if __name__ == '__main__':
             intermediate_ship_grid = ship_grid.grid - interpolated_grid1
 
             kernel = io.Kernel(varym, 1300.0, 1.5)
-            interp2 = io.GPInterpolator(intermediate_ship_grid, kernel) # GP for second step as we have zero mean
+            interp2 = io.GPInterpolator(intermediate_ship_grid, kernel)  # GP for second step as we have zero mean
 
             interp2.replace_covariance(interp1.posterior)
             interpolated_grid2 = interp2.do_interpolation()
@@ -482,13 +518,61 @@ if __name__ == '__main__':
         row = row + interpolated_grid2.calculate_regional_averages(regions, areas)
         row = row + interpolated_grid_ok.calculate_regional_averages(regions, areas)
 
+        interpolated_grid_run = kalman.update(
+            basic_grid.grid,
+            varym,
+            innovation_flat,
+            0.5,
+            0.1,
+            autocorr
+        )
+
+        interpolated_grid_run.data5[np.isnan(sampling_unc.sst.values[0:1, :, :])] = np.nan
+        row = row + interpolated_grid_run.calculate_regional_averages(regions, areas)
+
         plot_more_up(
-            [basic_grid.grid, basic_grid.grid, basic_grid.grid, interpolated_grid, biases, deck_biases,
-             spheroidal, flat, local],
-            [f'{year}-{month:02d} Basic grid', 'uncertainty', 'numobs', 'Interpolated grid',
-             'Individual ship biases', 'Deck biases', 'Spherical Harmonics', 'Global mean',
-             'Local', ],
-            ['anom', 'unc', 'numobs', 'anom', 'anom', 'anom', 'anom', 'anom', 'anom'],
+            [
+                basic_grid.grid,
+                basic_grid.grid,
+                basic_grid.grid,
+                interpolated_grid,
+                biases,
+                deck_biases,
+                basis1,
+                flat,
+                local,
+                interpolated_grid_ok,
+                interpolated_grid2,
+                interpolated_grid_run,
+            ],
+            [
+                f'{year}-{month:02d} Basic grid',
+                'uncertainty',
+                'numobs',
+                'Interpolated grid',
+                'Individual ship biases',
+                'Deck biases',
+                'ENSO basis fn',
+                'Global mean',
+                'Local interpolation',
+                'Ordinary Kriging',
+                'Two-step interpolation',
+                'Kalman filter'
+            ],
+            [
+                'anom',
+                'unc',
+                'numobs',
+                'anom',
+                'anom',
+                'anom',
+                'anom',
+                'anom',
+                'anom',
+                'anom',
+                'anom',
+                'anom'
+            ],
             data_dir / "ICOADS" / "Figures" / f"four_up_{year}{month:02d}.png"
         )
 

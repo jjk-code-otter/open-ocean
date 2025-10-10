@@ -328,7 +328,7 @@ class IcoadsGridder:
 if __name__ == '__main__':
     data_dir = Path(os.getenv("OODIR"))  #
 
-    start_year = 1850
+    start_year = 1895
     end_year = 2025
 
     drifter_threshold = 500

@@ -95,10 +95,11 @@ latitude = five_grid.latitude
 fig, axes = plt.subplots(nrows=1, ncols=1, figsize=(16, 9), subplot_kw=dict(projection=ccrs.PlateCarree()))
 plt.subplots_adjust(wspace=0, hspace=0)
 axes.coastlines(lw=1, color='black')
-x = axes.pcolormesh(longitude, latitude, correlation, vmin=0.0, vmax=1.0, cmap='inferno')
+x = axes.pcolormesh(longitude, latitude, enso, vmin=-1.0, vmax=1.0, cmap='RdBu_r')
 fig.colorbar(x)
 axes.text(-175, 77, "ENSO Correlation", color='white')
 plt.savefig(data_dir / "SST_CCI" / "enso_correlation_5x5.png")
+plt.close()
 
 five_grid.to_netcdf(data_dir / "SST_CCI" / "SST_ENSOCorrelation_5x5.nc")
 
@@ -118,7 +119,7 @@ axes.coastlines(lw=1, color='black')
 x = axes.pcolormesh(longitude, latitude, correlation, vmin=0.0, vmax=1.0, cmap='inferno')
 fig.colorbar(x)
 axes.text(-175, 77, "Correlation", color='white')
-plt.savefig(data_dir / "SST_CCI" / "correlation_5x5.png")
+plt.savefig(data_dir / "SST_CCI" / "auto_correlation_5x5.png")
 
 five_grid.to_netcdf(data_dir / "SST_CCI" / "SST_AutoCorrelation_5x5.nc")
 
